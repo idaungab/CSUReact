@@ -1,0 +1,51 @@
+var express = require('express');
+var router = express.Router();
+const bodyParser = require('body-parser');
+const logger = require('morgan');
+
+let pg = require('pg');
+
+let pool = new pg.Pool({
+	port:5432,
+	database:'enrolment',
+	user:'juan',
+	password:'root',
+	max:100
+});
+router.use(logger('dev'));
+router.use(bodyParser.json());
+router.use(bodyParser.urlencoded({extended:false}));
+
+router.use(function(request, response, next){
+	response.header("Access-Control-Allow-Origin","*");
+	response.header("Access-Control-Allow","Origin,X-Requested-With,Content-Type, Accept");
+	next();
+});
+/* GET home page. */
+router.get('/', function(req, res, next) {
+  res.render('index', { title: 'Express' });
+});
+
+router.get('/sample', function(req, res){
+ res.send('hello from sample')
+});
+
+router.get('/room',function(req, res){
+	pool.connect((err,db,done) => {
+	if(err) {
+	console.log(err)
+	}
+	else{
+		db.query('SELECT * from room',(err,table) => {
+		if(err){
+		console.log(err);
+		}
+		else{
+		db.end();
+		res.send(table.rows);
+		}	
+   	  })
+	 }
+	})
+});
+module.exports = router;
