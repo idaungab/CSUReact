@@ -1580,11 +1580,21 @@ router.post('/checkOfferedtoStudent', function(request, response) {
 															console.log(err);
 														}
 														else {
-																if(table.rows.length > 0){
-
-																}
+																console.log("data inserted");
+																var Query2 = "SELECT distinct $1,subjcode,section,$2,$3 FROM offeredfor "+
+																					" WHERE sy=$2 and sem=$3 and  $5 ilike progcode||'%' and block=$4 and studlevel=$6 LIMIT 1";
+																db.query(Query,[studid,sy,sem,block,progcode,year],(err,table) =>{
+																	if(err){
+																		console.log(err);
+																	}
+																	else {
+																			response.send({message:"Course offering assignment for given block successful!" , offering:"true"});
+																	}
+																})
 														}
 													})
+											}else{
+												response.send({message: "No assigned course offering for the given BLOCK.", offering:"false"});
 											}
 									}
 								})
@@ -1595,6 +1605,58 @@ router.post('/checkOfferedtoStudent', function(request, response) {
 	})
 });
 //**** End of checking offered courses to student ***//
+
+//****Add 1 slot with  verification code ***//
+router.post('/verificationCodeSubmission', function(request, response) {
+	var studid = request.body.studid;
+	var sy = request.body.sy;
+	var sem = request.body.sem;
+	var vercode = request.body.vercode;
+
+	pool.connect((err,db,done)=>{
+		if(err){
+			console.log(err);
+		}
+		else {
+			var Query = "SELECT * FROM add1slot WHERE vercode=$1::numeric AND studid=$2 AND sy=$3 AND sem=$4";
+			db.query(Query,[vercode,studid,sy,sem],(err,table) =>{
+				if(err){
+					console.log(err);
+				}
+				else {
+						if(table.rows.length > 0){
+							var result = table.rows;
+							var subjcode = table.rows[0].subjcode;
+							var section = table.rows[0].section;
+							var Query1 = "SELECT subjcode, unit FROM (SELECT s.unit, s.subjcode " +
+										        " , (SELECT d.grade FROM registration d WHERE d.subjcode=s.subjcode AND d.studid=$1 " +
+										        " AND not(d.sy=$2 AND d.sem ilike $3) ORDER BY d.sy desc, d.sem desc limit 1) AS GR " +
+										        " FROM subject s where s.subjcode=$4 AND not(s.subjcode like 'NSTP%' OR s.subjcode like 'MS %' )) AS A " +
+										        " WHERE (not GR IN ('IN PROG', 'IN PROGRESS')) OR GR ISNULL ";
+							db.query(Query,[studid,sy,sem,subjcode],(err,table) =>{
+								if(err){
+									console.log(err);
+								}
+								else {
+										result.push(table.rows);
+										var Query2 = "SELECT is_stud_conflict($1,$4,$5,$2,$3) as can_add";
+										db.query(Query,[studid,sy,sem,subjcode,section],(err,table) =>{
+											if(err){
+												console.log(err);
+											}
+											else {
+													result.push(table.rows);
+											}
+										})
+								}
+							})
+						}
+				}
+			})
+		}
+	})
+});
+//**** END of adding slot from verification code***//
 
 
 
