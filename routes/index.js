@@ -1096,28 +1096,25 @@ router.post('/getCategoryProgram',function(request,response){
 		var days = request.body.days;
 		var fromtime = request.body.fromtime;
 		var totime = request.body.totime;
-		var room = request.body.room;
-		var building = request.body.building;
 
+		var arrdays = request.body.arrdays;
+		var arrfromtime = request.body.arrfromtime;
+		var arrtotime = request.body.arrtotime;
 
 		pool.connect((err,db,done)=>{
 			if(err){
 				console.log(err)
 			}
 			else{
-				var Query = "SELECT * FROM schedule WHERE days = $1 AND fromtime = $2 AND totime = $3 AND room = $4 AND bldg = $5";
-				db.query(Query,[days,fromtime,totime,room,building],(err,table) =>{
+				// var Query = "SELECT * FROM schedule WHERE days = $1 AND fromtime = $2 AND totime = $3 AND room = $4 AND bldg = $5";
+				var Query = "SELECT opt_conflict($1,$2,$3,$4,$5,$6) AS conflict";
+				db.query(Query,[days,fromtime,totime,arrdays,arrfromtime,arrtotime],(err,table) =>{
 					if(err){
 						console.log(err)
 					}
 					else{
-						db.end();
-						if(table.length>0){
-							response.send({days:days})
-						}
-						else{
-							response.send({days:days})
-						}
+							response.status(201).send(table.rows)
+							db.end();
 					}
 				})
 			}
@@ -1219,6 +1216,7 @@ router.get('/sysem', function(req, res) {
       console.log(err);
     }
     else {
+			// db.query("SELECT * from sysem where sy='2016-2017' ORDER BY sy,sem ASC", (err,table) =>{
       db.query('SELECT distinct sy,sem from sysem ORDER BY sy,sem ASC', (err,table) =>{
         if(err){
           console.log(err);
@@ -1254,7 +1252,7 @@ router.get('/semStudents', function(req, res) {
 });
 //** End of getting students from previous sem **//
 
-//** GET scholarship details **//
+//** GET scholars' details **//
 router.get('/scholar', function(req, res) {
   pool.connect((err,db,done)=>{
     if(err){
@@ -1262,6 +1260,27 @@ router.get('/scholar', function(req, res) {
     }
     else {
       db.query('SELECT * from scholar', (err,table) =>{
+        if(err){
+          console.log(err);
+        }
+        else {
+          db.end();
+          res.send(table.rows);
+        }
+      })
+    }
+  })
+});
+//** End of getting scholars **//
+
+//** GET scholarship details **//
+router.get('/scholarsDetail', function(req, res) {
+  pool.connect((err,db,done)=>{
+    if(err){
+      console.log(err);
+    }
+    else {
+      db.query('SELECT * from scholarsdetail', (err,table) =>{
         if(err){
           console.log(err);
         }
@@ -1337,6 +1356,28 @@ router.get('/getfromStudenttag', function(req, res) {
   })
 });
 //** End of getting studenttag **//
+
+//**** Get data in table registration ***//
+router.get('/getRegistration', function(req, res) {
+  pool.connect((err,db,done)=>{
+    if(err){
+      console.log(err);
+    }
+    else {
+      db.query('SELECT * from registration', (err,table) =>{
+        if(err){
+          console.log(err);
+        }
+        else {
+          db.end();
+          res.send(table.rows);
+        }
+      })
+    }
+  })
+});
+//*** End of getting data in registration ***//
+
 //**Get studenttag details**//
 router.post('/getBlocks',function(request,response){
 	var progcode = request.body.progcode;
@@ -1348,7 +1389,7 @@ router.post('/getBlocks',function(request,response){
 			console.log(err);
 		}
 		else{
-			var Query = "Select distinct block  from offeredfor where progcode=$1 and sy=$2 and sem=$3 order by block desc';";
+			var Query = "Select distinct block  from offeredfor where progcode=$1 and sy=$2 and sem=$3 order by block desc";
 
 			db.query(Query,[progcode,sy,sem],(err,table) =>{
 				if(err){
@@ -1437,6 +1478,122 @@ router.post('/whenNotFoundinStudenttag',function(request,response){
 	})
 });
 //** End of getting student data from prior sem **//
+
+//*** Check Clearnce ***//
+router.post('/checkClearance', function(request, response) {
+	var studid = request.body.studid;
+	pool.connect((err,db,done)=>{
+		if(err){
+			console.log(err);
+		}
+		else {
+			var Query = "SELECT * FROM clearance.studentclearances WHERE studid=$1 AND datecleared isnull";
+			db.query(Query,[studid],(err,table) =>{
+				if(err){
+					console.log(err);
+				}
+				else {
+					if(table.rows.length > 0){
+						db.end();
+						response.send({message: 'Sorry student cannot proceed enrollment. Student has uncleared clearance.',cleared:'false'});
+					}else{
+						db.end();
+						response.send({message: 'All accounts are settled', cleared:'true'});
+					}
+
+				}
+			})
+		}
+	})
+});
+
+//** End of Checking Clearance **//
+
+//**** Check Student payment ***//
+router.post('/checkStudentPayment', function(request, response) {
+	var studid = request.body.studid;
+	var sy = request.body.sy;
+	var sem = request.body.sem;
+
+	pool.connect((err,db,done)=>{
+		if(err){
+			console.log(err);
+		}
+		else {
+			var Query = "Select pays.ornumber,pays.amount from receipt,pays "+
+								  "where receipt.idno=$1 and receipt.student=true and receipt.sy=$2 and receipt.sem=$3 "+
+								  "  and receipt.ornumber=pays.ornumber and pays.ascode=18 and not(pays.amount=0.00::numeric(10,2))";
+			db.query(Query,[studid,sy,sem],(err,table) =>{
+				if(err){
+					console.log(err);
+				}
+				else {
+						db.end();
+						response.send(table.rows);
+				}
+			})
+		}
+	})
+});
+//**** End of checking student payment ***//
+
+//**** Check for offered courses to student ***//
+router.post('/checkOfferedtoStudent', function(request, response) {
+	var studid = request.body.studid;
+	var sy = request.body.sy;
+	var sem = request.body.sem;
+	var block = request.body.block;
+	var progcode = request.body.progcode;
+	var year = request.body.year;
+
+	pool.connect((err,db,done)=>{
+		if(err){
+			console.log(err);
+		}
+		else {
+			var Query = "Select * from registration where studid=$1 and sy=$2 and sem=$3";
+			db.query(Query,[studid,sy,sem],(err,table) =>{
+				if(err){
+					console.log(err);
+				}
+				else {
+						if(table.rows.length == 0 && block == ''){
+								var Query1 = "SELECT distinct $1,subjcode,section,$2,$3 FROM offeredfor "+
+														" WHERE sy=$2 and sem=$3 and  $5 ilike progcode||'%' and block=$4 and studlevel=$6";
+								db.query(Query,[studid,sy,sem,block,progcode,year],(err,table) =>{
+									if(err){
+										console.log(err);
+									}
+									else {
+											if(table.rows.length > 0){
+													var Query1 = "INSERT INTO registration(studid,subjcode,section,sy,sem) "+
+																"SELECT distinct $1,o.subjcode,section,$2,$3 FROM offeredfor o, "+
+																"(SELECT subjcode FROM offeredfor WHERE sy=$2 and sem=$3 and $5 ilike progcode " +
+																" and block=$4 and studlevel=$6 EXCEPT "+
+																" SELECT subjcode FROM registration WHERE studid=$1 and (is_pass(grade) OR (grade='INC' and is_pass(gcompl)))) as p "+
+																"WHERE o.subjcode=p.subjcode and sy=$2 and sem=$3 and $5 ilike progcode and block=$4 and studlevel=$6";
+													db.query(Query,[studid,sy,sem,block,progcode,year],(err,table) =>{
+														if(err){
+															console.log(err);
+														}
+														else {
+																if(table.rows.length > 0){
+
+																}
+														}
+													})
+											}
+									}
+								})
+						}
+				}
+			})
+		}
+	})
+});
+//**** End of checking offered courses to student ***//
+
+
 
 
 //***************************
