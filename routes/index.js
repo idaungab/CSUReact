@@ -1214,8 +1214,8 @@ router.get('/sysem', function(req, res) {
       console.log(err);
     }
     else {
-			// db.query("SELECT * from sysem where sy='2016-2017' ORDER BY sy,sem ASC", (err,table) =>{
-      db.query('SELECT distinct sy,sem from sysem ORDER BY sy,sem ASC', (err,table) =>{
+			db.query("SELECT * from sysem where sy='2016-2017' and sem='2nd' ORDER BY sy,sem ASC", (err,table) =>{
+      // db.query('SELECT distinct sy,sem from sysem ORDER BY sy,sem ASC', (err,table) =>{
         if(err){
           console.log(err);
         }
@@ -1544,6 +1544,8 @@ router.post('/checkOfferedtoStudent', function(request, response) {
 	var progcode = request.body.progcode;
 	var year = request.body.year;
 
+	var result = [];
+
 	pool.connect((err,db,done)=>{
 		if(err){
 			console.log(err);
@@ -1555,7 +1557,7 @@ router.post('/checkOfferedtoStudent', function(request, response) {
 					console.log(err);
 				}
 				else {
-						if(table.rows.length == 0 && block == ''){
+						if(table.rows.length === 0 && block === ''){
 								var Query1 = "SELECT distinct $1,subjcode,section,$2,$3 FROM offeredfor "+
 														" WHERE sy=$2 and sem=$3 and  $5 ilike progcode||'%' and block=$4 and studlevel=$6";
 								db.query(Query,[studid,sy,sem,block,progcode,year],(err,table) =>{
@@ -1583,17 +1585,30 @@ router.post('/checkOfferedtoStudent', function(request, response) {
 																		console.log(err);
 																	}
 																	else {
-																			response.send({message:"Course offering assignment for given block successful!" , offering:"true"});
+																	    db.end();
+																			result.push({message:"Course offering assignment for given block successful!" , offering:"true"});
 																	}
 																})
 														}
 													})
 											}else{
-												response.send({message: "No assigned course offering for the given BLOCK.", offering:"false"});
+												db.end();
+												result.push({message: "No assigned course offering for the given BLOCK.", offering:"false"});
 											}
 									}
 								})
 						}
+						var Query3 = "Select * from semstudent where studid=$1 and sy=$2 and sem=$3";
+						db.query(Query,[studid,sy,sem],(err,table) =>{
+							if(err){
+								console.log(err);
+							}
+							else {
+
+									response.send({message:"Course offering assignment for given block successful!" , offering:"true"});
+							}
+						})
+
 				}
 			})
 		}
@@ -1641,6 +1656,8 @@ router.post('/verificationCodeSubmission', function(request, response) {
 											}
 											else {
 													result.push(table.rows);
+													response.send(result);
+													console.log(result);
 											}
 										})
 								}
