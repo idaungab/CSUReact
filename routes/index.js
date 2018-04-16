@@ -1096,28 +1096,23 @@ router.post('/getCategoryProgram',function(request,response){
 		var days = request.body.days;
 		var fromtime = request.body.fromtime;
 		var totime = request.body.totime;
-		var room = request.body.room;
-		var building = request.body.building;
-
+		var days2 = request.body.days;
+		var fromtime2 = request.body.fromtime;
+		var totime2 = request.body.totime;
 
 		pool.connect((err,db,done)=>{
 			if(err){
 				console.log(err)
 			}
 			else{
-				var Query = "SELECT * FROM schedule WHERE days = $1 AND fromtime = $2 AND totime = $3 AND room = $4 AND bldg = $5";
-				db.query(Query,[days,fromtime,totime,room,building],(err,table) =>{
+				var Query = "SELECT opt_conflict($1,$2,$3,$4,$5,$6) AS conflict";
+				db.query(Query,[days,fromtime,totime,days2,fromtime2,totime2],(err,table) =>{
 					if(err){
 						console.log(err)
 					}
 					else{
 						db.end();
-						if(table.length>0){
-							response.send({days:days})
-						}
-						else{
-							response.send({days:days})
-						}
+						response.send(table.rows)
 					}
 				})
 			}
