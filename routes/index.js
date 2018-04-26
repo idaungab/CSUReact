@@ -1096,9 +1096,9 @@ router.post('/getCategoryProgram',function(request,response){
 		var days = request.body.days;
 		var fromtime = request.body.fromtime;
 		var totime = request.body.totime;
-		var days2 = request.body.days;
-		var fromtime2 = request.body.fromtime;
-		var totime2 = request.body.totime;
+		var days2 = request.body.days2;
+		var fromtime2 = request.body.fromtime2;
+		var totime2 = request.body.totime2;
 
 		pool.connect((err,db,done)=>{
 			if(err){
@@ -1119,6 +1119,29 @@ router.post('/getCategoryProgram',function(request,response){
 		})
 	})
 	// **** End of Effectivity Date Instructor ****//
+
+	// **** Start of Program ****//
+	router.get('/getProgram',function(request,response){
+
+		pool.connect((err,db,done)=>{
+			if(err){
+				console.log(err)
+			}
+			else{
+				var Query = "SELECT progcode FROM program WHERE is_active = true ORDER BY progcode ASC";
+				db.query(Query,(err,table) =>{
+					if(err){
+						console.log(err)
+					}
+					else{
+						db.end();
+						response.send(table.rows)
+					}
+				})
+			}
+		})
+	})
+	// **** End of Program ****//
 
 //***************************
 //END Scheduling Module *****
@@ -1214,8 +1237,8 @@ router.get('/sysem', function(req, res) {
       console.log(err);
     }
     else {
-			db.query("SELECT * from sysem where sy='2016-2017' and sem='2nd' ORDER BY sy,sem ASC", (err,table) =>{
-      // db.query('SELECT distinct sy,sem from sysem ORDER BY sy,sem ASC', (err,table) =>{
+			// db.query("SELECT * from sysem where sy='2016-2017' and sem='2nd' ORDER BY sy,sem ASC", (err,table) =>{
+      db.query('SELECT distinct sy,sem from sysem ORDER BY sy,sem ASC', (err,table) =>{
         if(err){
           console.log(err);
         }
@@ -1299,7 +1322,7 @@ router.get('/programLimitDetail', function(req, res) {
       console.log(err);
     }
     else {
-      db.query('SELECT progcode,progdesc,college from program', (err,table) =>{
+      db.query('SELECT progcode,progdesc,college from program WHERE is_active = true ORDER BY progcode ASC', (err,table) =>{
         if(err){
           console.log(err);
         }
@@ -1376,6 +1399,27 @@ router.get('/getRegistration', function(req, res) {
 });
 //*** End of getting data in registration ***//
 
+//**** Get data in table status ***//
+router.get('/getStatus', function(req, res) {
+  pool.connect((err,db,done)=>{
+    if(err){
+      console.log(err);
+    }
+    else {
+      db.query('SELECT statusdesc FROM status WHERE isactive ORDER BY statusdesc', (err,table) =>{
+        if(err){
+          console.log(err);
+        }
+        else {
+          db.end();
+          res.send(table.rows);
+        }
+      })
+    }
+  })
+});
+//*** End of getting data in status***//
+
 //**Get studenttag details**//
 router.post('/getBlocks',function(request,response){
 	var progcode = request.body.progcode;
@@ -1399,7 +1443,7 @@ router.post('/getBlocks',function(request,response){
 			})
 		}
 	})
-})
+});
 //** End of getting studenttag **//
 
 //** Get student data from prior sem **//
@@ -1477,6 +1521,127 @@ router.post('/whenNotFoundinStudenttag',function(request,response){
 });
 //** End of getting student data from prior sem **//
 
+//**If student is not ELEM or HS **//
+router.post('/evalIfNotELEMHS',function(request,response){
+	var studid = request.body.studid;
+	var sy = request.body.sy;
+	var sem = request.body.sem;
+	var result = [];
+
+	pool.connect((err,db,done) =>{
+		if(err){
+			console.log(err);
+		}
+		else{
+			var Query = "SELECT distinct REGISTRATION.StudID, REGISTRATION.subjcode, REGISTRATION.section, REGISTRATION.SY, REGISTRATION.Sem, Schedule.days, Schedule.fromtime, Schedule.totime, " +
+              "SUBJECT.courseno,Schedule.fromtime,(to_char(to_timestamp(schedule.fromtime::text,'HH24:MI'),'HH12:MI AM')||'-'||to_char(to_timestamp(schedule.totime::text,'HH24:MI'),'HH12:MI AM'))::varchar as skedtime "+
+              " ,subject.description::varchar as description, subject.lab, subject.lec, subject.unit, OfferedSubject.is_requested, REGISTRATION.datevalidated "+
+							" FROM SUBJECT INNER JOIN ((OfferedSubject INNER JOIN Schedule ON (OfferedSubject.Sem = Schedule.Sem) AND (OfferedSubject.SY = Schedule.SY) AND (OfferedSubject.section = Schedule.section) AND (OfferedSubject.subjcode = Schedule.subjcode)) "+
+							" INNER JOIN REGISTRATION ON (OfferedSubject.Sem = REGISTRATION.Sem) AND (OfferedSubject.SY = REGISTRATION.SY) AND (OfferedSubject.section = REGISTRATION.section) AND (OfferedSubject.subjcode = REGISTRATION.subjcode)) ON SUBJECT.subjcode = OfferedSubject.subjcode "+
+							" WHERE REGISTRATION.StudID=$1 AND REGISTRATION.SY=$2 AND REGISTRATION.Sem=$3 "+
+							" ORDER BY courseno ";
+
+			db.query(Query,[studid,sy,sem],(err,table) =>{
+				if(err){
+					console.log(err);
+				}else{
+					if(table.rows.length > 0){
+						result.push(table.rows.map(obj => obj.subjcode));
+						var Query1 = "SELECT sum(unit) as load from " +
+													" (SELECT subjcode, unit FROM (  " +
+													" SELECT distinct R.subjcode,subject.unit  " +
+														" , (select d.grade from registration d where d.subjcode=r.subjcode and d.studid=r.studid and not(d.sy=r.sy and d.sem ilike r.sem) order by d.sy desc, d.sem desc limit 1) AS GR  " +
+														" FROM subject,registration R " +
+														" WHERE subject.subjcode=R.subjcode  " +
+														"  and not(R.subjcode like 'NSTP%' OR R.subjcode like 'MS %' OR R.subjcode like 'ENGL R%'  OR R.subjcode like 'MATH R%') " +
+														"  and studid=$1 and sy=$2 and sem=$3) AS A " +
+														" WHERE (not GR IN ('IN PROG', 'IN PROGRESS')) OR GR ISNULL " +
+														" UNION " +
+													  " SELECT distinct registration.subjcode,subject.lec as unit " +
+														" FROM subject,registration " +
+														" WHERE subject.subjcode=registration.subjcode and (registration.subjcode like 'ENGL R%' OR registration.subjcode like 'MATH R%') " +
+														"	and studid=$1 and sy=$2 and sem=$3) as qry";
+						db.query(Query,[studid,sy,sem],(err,table) =>{
+							if(err){
+								console.log(err);
+							}else{
+									result.push(table.rows);
+									console.log(result);
+									db.end();
+									response.send(result);
+							}
+						})
+					}else{
+						db.end();
+						response.send({message: "No enrolled courses yet!"})
+					}
+				}
+			})
+		}
+	})
+})
+//**END of If student is not ELEM or HS **//
+
+//***Offered courses to given student data **//
+router.post('/checkOfferingToStudentANDClearance', function(request, response) {
+	var studid = request.body.studid;
+	var sy = request.body.sy;
+	var sem = request.body.sem;
+	var progcode = request.body.progcode;
+	var year = request.body.year;
+
+	pool.connect((err,db,done)=>{
+		if(err){
+			console.log(err);
+		}
+		else {
+			var Query = "SELECT DISTINCT offeredsubject.subjcode,subject.courseno "+
+									"	FROM offeredsubject,subject "+
+									"	WHERE sy=$2 AND sem=$3 AND subject.subjcode=offeredsubject.subjcode AND subject.is_active "+
+									"	AND NOT (UPPER(offeredsubject.subjcode)=UPPER('flexi') OR UPPER(offeredsubject.subjcode)=UPPER('CONSULTATION')) "+
+									"	EXCEPT "+
+									"	SELECT p.subjcode, s.courseno FROM subject s, prereqsubj p LEFT JOIN (SELECT * FROM registration WHERE (is_pass(grade) or (grade='INC' and is_pass(gcompl))) AND studid=$1) r ON(p.requisite=r.subjcode) "+
+									"	WHERE s.subjcode=p.subjcode "+
+									"	AND p.progcode=(CASE WHEN $4 like '%-G' THEN (CASE WHEN $4='ASOCMATSCI-G' THEN 'ASSOC MATSCI' ELSE $4 END) ELSE $4 END) "+
+									"	AND p.yearcreated=$5 AND (r.subjcode isnull ) "+
+									"	EXCEPT "+
+									"	SELECT r.subjcode, s.courseno FROM registration r, subject s, semstudent t, program p "+
+									"	WHERE r.studid=$1 AND s.subjcode=r.subjcode AND r.studid=t.studid AND r.sy=t.sy AND r.sem=t.sem AND t.studmajor=p.progcode "+
+									"	AND (CASE WHEN p.undergrad THEN (is_pass(grade) OR (grade='INC' AND is_pass(gcompl))) "+
+									"	WHEN p.masteral THEN (grade<='2.00' OR (grade='INC' AND grade<='2.00')) "+
+									" WHEN p.phd THEN (grade<='1.75' OR (grade='INC' AND grade<='1.75')) "+
+									"	ELSE FALSE END) "+
+								  " ORDER BY subjcode";
+			db.query(Query,[studid,sy,sem,progcode,year],(err,table) =>{
+				if(err){
+					console.log(err);
+				}
+				else {
+						var result = table.rows;
+						var Query = "SELECT * FROM clearance.studentclearances WHERE studid=$1 AND datecleared isnull";
+						db.query(Query,[studid],(err,table) =>{
+							if(err){
+								console.log(err);
+							}
+							else {
+								if(table.rows.length > 0){
+									//result.push({message: 'Sorry student cannot proceed enrollment. Student has uncleared clearance.',cleared:'false'});
+									db.end();
+									response.send({result,message: 'Sorry student cannot proceed enrollment. Student has uncleared clearance.',cleared:'false'});
+								}else{
+									//result.push({message: 'All accounts are settled', cleared:'true'});
+									db.end();
+									response.send({result,message: 'All accounts are settled', cleared:'true'});
+								}
+							}
+						})
+				}
+			})
+		}
+	})
+});
+//***END Offered courses to given student data **//
+
 //*** Check Clearnce ***//
 router.post('/checkClearance', function(request, response) {
 	var studid = request.body.studid;
@@ -1504,7 +1669,6 @@ router.post('/checkClearance', function(request, response) {
 		}
 	})
 });
-
 //** End of Checking Clearance **//
 
 //**** Check Student payment ***//
@@ -1544,77 +1708,495 @@ router.post('/checkOfferedtoStudent', function(request, response) {
 	var progcode = request.body.progcode;
 	var year = request.body.year;
 
-	var result = [];
+	pool.connect((err,db,done)=>{
+		if(err){
+			console.log(err);
+		}
+		else {
+			var Query = "SELECT distinct REGISTRATION.StudID, REGISTRATION.subjcode, REGISTRATION.section, REGISTRATION.SY, REGISTRATION.Sem, Schedule.days, Schedule.fromtime, Schedule.totime, "+
+                  " SUBJECT.courseno,Schedule.fromtime,(to_char(to_timestamp(schedule.fromtime::text,'HH24:MI'),'HH12:MI AM')||'-'||to_char(to_timestamp(schedule.totime::text,'HH24:MI'),'HH12:MI AM'))::varchar as skedtime "+
+                  " ,subject.description::varchar as description, subject.lab, subject.lec, subject.unit, OfferedSubject.is_requested, REGISTRATION.datevalidated "+
+                  " FROM SUBJECT INNER JOIN ((OfferedSubject INNER JOIN Schedule ON (OfferedSubject.Sem = Schedule.Sem) AND (OfferedSubject.SY = Schedule.SY) AND (OfferedSubject.section = Schedule.section) AND (OfferedSubject.subjcode = Schedule.subjcode)) "+
+                  " INNER JOIN REGISTRATION ON (OfferedSubject.Sem = REGISTRATION.Sem) AND (OfferedSubject.SY = REGISTRATION.SY) AND (OfferedSubject.section = REGISTRATION.section) AND (OfferedSubject.subjcode = REGISTRATION.subjcode)) ON SUBJECT.subjcode = OfferedSubject.subjcode "+
+                  " WHERE REGISTRATION.StudID=$1 AND REGISTRATION.SY=$2 AND REGISTRATION.Sem=$3 ORDER BY courseno";
+			db.query(Query,[studid,sy,sem],(err,table) =>{
+				if(err){
+					console.log(err);
+				}
+				else {
+					if(table.rows.length === 0 && block != ''){
+								var Query1 = "SELECT distinct $6,subjcode,section,sy,sem FROM offeredfor "+
+											" WHERE sy=$1 and sem=$2 and  $4 ilike progcode||'%' and block=$3 and studlevel=$5";
+								db.query(Query1,[sy,sem,block,progcode,year,studid],(err,table) =>{
+									if(err){
+										console.log(err);
+									}
+									else {
+										if(table.rows.length > 0){
+											var Query2= " INSERT INTO registration(studid,subjcode,section,sy,sem) "+
+																	" SELECT distinct $6,o.subjcode,section,$1,$2 FROM offeredfor o, "+
+																	" (SELECT subjcode FROM offeredfor WHERE sy=$1 and sem=$2 and $4 ilike progcode " +
+																	" and block=$3 and studlevel=$5 EXCEPT "+
+																	" SELECT subjcode FROM registration WHERE studid=$6 and (is_pass(grade) OR (grade='INC' and is_pass(gcompl)))) as p "+
+																	" WHERE o.subjcode=p.subjcode and sy=$1 and sem=$2 and $4 ilike progcode and block=$3 and studlevel=$5";
+											db.query(Query2,[sy,sem,block,progcode,year,studid],(err,table) =>{
+												if(err){
+													console.log(err);
+												}
+												else {
+													console.log("Data inserted!");
+													var Query3= " SELECT distinct $6,subjcode,section,$1,$2 FROM offeredfor "+
+																" WHERE sy=$1 and sem=$2 and $4 ilike progcode||'%' and block=$3 and studlevel=$5 LIMIT 1 ";
+													db.query(Query3,[sy,sem,block,progcode,year,studid],(err,table) =>{
+														if(err){
+															console.log(err);
+														}
+														else {
+															console.log(table.rows);
+																var subjcode = table.rows[0].subjcode;
+																var Query4= " SELECT DISTINCT * FROM "+
+																					" (SELECT DISTINCT SUBJECT.courseno, OfferedSubject.subjcode, OfferedSubject.section, OfferedSubject.SY, OfferedSubject.Sem, "+
+																					" (to_char(to_timestamp(Schedule.fromtime::text, 'HH24:MI:SS'::text), 'HH12:MI AM')|| '-' ||to_char(to_timestamp(Schedule.totime::text, 'HH24:MI:SS'::text), 'HH12:MI AM'))::varchar as skedtime, "+
+																					" Schedule.days,OfferedSubject.Slots as quota,(OfferedSubject.Slots-OfferedSubject.Enrollees)::int2 as slots,subject.unit, "+
+																					" OfferedSubject.is_restricted,(CASE WHEN OfferedSubject.is_reQUESTED THEN 'REQ' ELSE 'REG' END)::VARCHAR AS OFFERING, "+
+																					" subject.description::varchar as description, subject.lab, subject.lec, subject.unit "+
+																					" FROM subject,offeredsubject,schedule,offeredFor "+
+																					" WHERE subject.subjcode=offeredsubject.subjcode and offeredsubject.subjcode=schedule.subjcode and offeredsubject.section=schedule.section and offeredsubject.sy=schedule.sy and offeredsubject.sem=schedule.sem "+
+																					" AND  offeredsubject.subjcode=offeredFor.subjcode and offeredsubject.section=offeredFor.section and offeredsubject.sy=offeredFor.sy and offeredsubject.sem=offeredFor.sem "+
+																					" AND  (OfferedSubject.Slots-OfferedSubject.Enrollees)>0 "+
+																					" AND  OfferedSubject.SY=$1 AND OfferedSubject.Sem=$2 AND OfferedSubject.subjcode=$4 "+
+																					"  AND (OfferedSubject.is_restricted=false OR (OfferedSubject.is_restricted AND offeredFor.progcode=$3 )) "+
+																					" UNION "+
+																					" SELECT DISTINCT SUBJECT.courseno, OfferedSubject.subjcode, OfferedSubject.section, OfferedSubject.SY, OfferedSubject.Sem,  "+
+																					" (to_char(to_timestamp(Schedule.fromtime::text, 'HH24:MI:SS'::text), 'HH12:MI AM')|| '-' ||to_char(to_timestamp(Schedule.totime::text, 'HH24:MI:SS'::text), 'HH12:MI AM'))::varchar as skedtime, "+
+																					" Schedule.days,OfferedSubject.Slots as quota,(OfferedSubject.Slots-OfferedSubject.Enrollees)::int2 as slots,subject.unit, "+
+																					" OfferedSubject.is_restricted,(CASE WHEN OfferedSubject.is_reQUESTED THEN 'REQ' ELSE 'REG' END)::VARCHAR AS OFFERING, "+
+																					" subject.description::varchar as description, subject.lab, subject.lec, subject.unit "+
+																					" FROM subject,offeredsubject,schedule "+
+																					" WHERE subject.subjcode=offeredsubject.subjcode and offeredsubject.subjcode=schedule.subjcode and offeredsubject.section=schedule.section and offeredsubject.sy=schedule.sy and offeredsubject.sem=schedule.sem "+
+																					" AND  (OfferedSubject.Slots-OfferedSubject.Enrollees)>0 "+
+																					"  AND  OfferedSubject.SY=$1 AND OfferedSubject.Sem=$2 AND OfferedSubject.subjcode=$4 "+
+																					"  AND OfferedSubject.is_restricted=false) as qry";
+																db.query(Query4,[sy,sem,progcode,subjcode],(err,table) =>{
+																	if(err){
+																		console.log(err);
+																	}
+																	else {
+																		var result = table.rows;
+																		db.end();
+																		response.send({result,message: "OK"});
+																	}
+																})
+														}
+													})
+												}
+											})
+										}else{
+											db.end();
+											response.send({message: "No assigned course offering for the given BLOCK."});
+										}
+									}
+								})
+						}else{
+							db.end();
+							response.send({message:"No Block Supplied!"});
+						}
+				}
+				})
+			}
+			})
+ });
+//**** End of checking offered courses to student ***//
+
+//**** Enroll student, insert/update semstudent ***//
+router.post('/InsertUpdateEnrollStudent', function(request, response) {
+	var studid = request.body.studid;
+	var sy = request.body.sy;
+	var sem = request.body.sem;
+	var studmajor = request.body.major;
+	var regdate = request.body.regdate;
+	var gpa = request.body.gpa;
+	var scholarcode = request.body.scholarcode;
+	var studlevel = request.body.year;
+	var cur_year = request.body.cur_year;
+	var status = request.body.status;
+	var maxload = request.body.maxload;
+	var block = request.body.block;
+	var scholastic_stat = request.body.scholastic_stat;
+	var savemode = request.body.savemode;
+
+	let values = [studid,sy,sem,studmajor,regdate,gpa,scholarcode,studlevel,cur_year,status,maxload,block,scholastic_stat]
 
 	pool.connect((err,db,done)=>{
 		if(err){
 			console.log(err);
 		}
 		else {
-			var Query = "Select * from registration where studid=$1 and sy=$2 and sem=$3";
+			if(savemode === 'INSERT'){
+
+				var Query = "INSERT INTO semstudent( studid, sy, sem, studmajor, regdate, gpa, scholarcode, studlevel,cur_year, status, maxload, block, standing) "+
+					          " VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)";
+				db.query(Query,[...values],(err,table) =>{
+					if(err){
+						console.log(err);
+					}
+					else {
+						var result = table.rows;
+							db.end();
+							response.send({result, message: 'Data inserted!',status: "OK"});
+					}
+				})
+			}
+			if(savemode === 'UPDATE'){
+				var Query = "UPDATE semstudent SET status=$1, maxload=$2, standing=$3 WHERE studid=$4 and sy=$5 and sem=$6";
+				db.query(Query,[status,maxload,scholastic_stat,studid,sy,sem],(err,table) =>{
+					if(err){
+						console.log(err);
+					}
+					else {
+						var result = table.rows;
+							db.end();
+							response.send({result,message: 'Data updated!',status: "OK"});
+					}
+				})
+			}
+		}
+	})
+});
+
+//****END of Enrolling student, insert/update semstudent ***//
+
+//**** Register component ***//
+router.post('/zqryreg', function(request, response) {
+	var studid = request.body.studid;
+	var sy = request.body.sy;
+	var sem = request.body.sem;
+
+	pool.connect((err,db,done)=>{
+		if(err){
+			console.log(err);
+		}
+		else {
+			var Query = "SELECT distinct REGISTRATION.StudID, REGISTRATION.subjcode, REGISTRATION.section, REGISTRATION.SY, REGISTRATION.Sem, Schedule.days, Schedule.fromtime, Schedule.totime, "+
+		             " SUBJECT.courseno,Schedule.fromtime,(to_char(to_timestamp(schedule.fromtime::text,'HH24:MI'),'HH12:MI AM')||'-'||to_char(to_timestamp(schedule.totime::text,'HH24:MI'),'HH12:MI AM'))::varchar as skedtime "+
+		             "  ,subject.description::varchar as description, subject.lab, subject.lec, subject.unit, OfferedSubject.is_requested, REGISTRATION.datevalidated "+
+								 " FROM SUBJECT INNER JOIN ((OfferedSubject INNER JOIN Schedule ON (OfferedSubject.Sem = Schedule.Sem) AND (OfferedSubject.SY = Schedule.SY) AND (OfferedSubject.section = Schedule.section) AND (OfferedSubject.subjcode = Schedule.subjcode)) "+
+								 " INNER JOIN REGISTRATION ON (OfferedSubject.Sem = REGISTRATION.Sem) AND (OfferedSubject.SY = REGISTRATION.SY) AND (OfferedSubject.section = REGISTRATION.section) AND (OfferedSubject.subjcode = REGISTRATION.subjcode)) ON SUBJECT.subjcode = OfferedSubject.subjcode "+
+								 " WHERE REGISTRATION.StudID=$1 AND REGISTRATION.SY=$2 AND REGISTRATION.Sem=$3 "+
+								 " ORDER BY courseno ";
 			db.query(Query,[studid,sy,sem],(err,table) =>{
 				if(err){
 					console.log(err);
 				}
 				else {
-						if(table.rows.length === 0 && block === ''){
-								var Query1 = "SELECT distinct $1,subjcode,section,$2,$3 FROM offeredfor "+
-														" WHERE sy=$2 and sem=$3 and  $5 ilike progcode||'%' and block=$4 and studlevel=$6";
-								db.query(Query,[studid,sy,sem,block,progcode,year],(err,table) =>{
-									if(err){
-										console.log(err);
-									}
-									else {
-											if(table.rows.length > 0){
-													var Query1 = "INSERT INTO registration(studid,subjcode,section,sy,sem) "+
-																"SELECT distinct $1,o.subjcode,section,$2,$3 FROM offeredfor o, "+
-																"(SELECT subjcode FROM offeredfor WHERE sy=$2 and sem=$3 and $5 ilike progcode " +
-																" and block=$4 and studlevel=$6 EXCEPT "+
-																" SELECT subjcode FROM registration WHERE studid=$1 and (is_pass(grade) OR (grade='INC' and is_pass(gcompl)))) as p "+
-																"WHERE o.subjcode=p.subjcode and sy=$2 and sem=$3 and $5 ilike progcode and block=$4 and studlevel=$6";
-													db.query(Query,[studid,sy,sem,block,progcode,year],(err,table) =>{
-														if(err){
-															console.log(err);
-														}
-														else {
-																console.log("data inserted");
-																var Query2 = "SELECT distinct $1,subjcode,section,$2,$3 FROM offeredfor "+
-																					" WHERE sy=$2 and sem=$3 and  $5 ilike progcode||'%' and block=$4 and studlevel=$6 LIMIT 1";
-																db.query(Query,[studid,sy,sem,block,progcode,year],(err,table) =>{
-																	if(err){
-																		console.log(err);
-																	}
-																	else {
-																	    db.end();
-																			result.push({message:"Course offering assignment for given block successful!" , offering:"true"});
-																	}
-																})
-														}
-													})
-											}else{
-												db.end();
-												result.push({message: "No assigned course offering for the given BLOCK.", offering:"false"});
-											}
-									}
-								})
-						}
-						var Query3 = "Select * from semstudent where studid=$1 and sy=$2 and sem=$3";
-						db.query(Query,[studid,sy,sem],(err,table) =>{
-							if(err){
-								console.log(err);
-							}
-							else {
-
-									response.send({message:"Course offering assignment for given block successful!" , offering:"true"});
-							}
-						})
-
+						db.end();
+						response.send(table.rows);
 				}
 			})
 		}
 	})
 });
-//**** End of checking offered courses to student ***//
+//**** End of register component ***//
+
+//**Get subject details**//
+router.get('/getCourses', function(req, res) {
+  pool.connect((err,db,done)=>{
+    if(err){
+      console.log(err);
+    }
+    else {
+      db.query('SELECT subjcode,description,lec,lab,unit,courseno FROM subject where is_active ORDER BY college', (err,table) =>{
+        if(err){
+          console.log(err);
+        }
+        else {
+          db.end();
+          res.send(table.rows);
+        }
+      })
+    }
+  })
+});
+//** End of getting subject**//
+
+//** Get sections of selected course ** //
+router.post('/getSections', function(request, response) {
+	var sy = request.body.sy;
+	var sem = request.body.sem;
+	var subjcode = request.body.subjcode;
+	var progcode = request.body.progcode;
+
+	pool.connect((err,db,done)=>{
+		if(err){
+			console.log(err);
+		}
+		else {
+			var Query = "SELECT DISTINCT * FROM "+
+								" (SELECT DISTINCT SUBJECT.courseno, OfferedSubject.subjcode, OfferedSubject.section, OfferedSubject.SY, OfferedSubject.Sem, "+
+								" (to_char(to_timestamp(Schedule.fromtime::text, 'HH24:MI:SS'::text), 'HH12:MI AM')|| '-' ||to_char(to_timestamp(Schedule.totime::text, 'HH24:MI:SS'::text), 'HH12:MI AM'))::varchar as skedtime, "+
+								" Schedule.days,OfferedSubject.Slots as quota,(OfferedSubject.Slots-OfferedSubject.Enrollees)::int2 as slots,subject.unit, "+
+								" OfferedSubject.is_restricted,(CASE WHEN OfferedSubject.is_reQUESTED THEN 'REQ' ELSE 'REG' END)::VARCHAR AS OFFERING, "+
+								" subject.description::varchar as description, subject.lab, subject.lec, subject.unit "+
+								" FROM subject,offeredsubject,schedule,offeredFor "+
+								" WHERE subject.subjcode=offeredsubject.subjcode and offeredsubject.subjcode=schedule.subjcode and offeredsubject.section=schedule.section and offeredsubject.sy=schedule.sy and offeredsubject.sem=schedule.sem "+
+								" AND  offeredsubject.subjcode=offeredFor.subjcode and offeredsubject.section=offeredFor.section and offeredsubject.sy=offeredFor.sy and offeredsubject.sem=offeredFor.sem "+
+								"  AND  (OfferedSubject.Slots-OfferedSubject.Enrollees)>0 "+
+								"  AND  OfferedSubject.SY=$1 AND OfferedSubject.Sem=$2 AND OfferedSubject.subjcode=$3 "+
+								"  AND (OfferedSubject.is_restricted=false OR (OfferedSubject.is_restricted AND offeredFor.progcode=$4 )) "+
+								" UNION "+
+								" SELECT DISTINCT SUBJECT.courseno, OfferedSubject.subjcode, OfferedSubject.section, OfferedSubject.SY, OfferedSubject.Sem,  "+
+								" (to_char(to_timestamp(Schedule.fromtime::text, 'HH24:MI:SS'::text), 'HH12:MI AM')|| '-' ||to_char(to_timestamp(Schedule.totime::text, 'HH24:MI:SS'::text), 'HH12:MI AM'))::varchar as skedtime, "+
+								" Schedule.days,OfferedSubject.Slots as quota,(OfferedSubject.Slots-OfferedSubject.Enrollees)::int2 as slots,subject.unit, "+
+								" OfferedSubject.is_restricted,(CASE WHEN OfferedSubject.is_reQUESTED THEN 'REQ' ELSE 'REG' END)::VARCHAR AS OFFERING, "+
+								" subject.description::varchar as description, subject.lab, subject.lec, subject.unit "+
+								" FROM subject,offeredsubject,schedule "+
+								" WHERE subject.subjcode=offeredsubject.subjcode and offeredsubject.subjcode=schedule.subjcode and offeredsubject.section=schedule.section and offeredsubject.sy=schedule.sy and offeredsubject.sem=schedule.sem "+
+								"  AND  (OfferedSubject.Slots-OfferedSubject.Enrollees)>0 "+
+								"  AND  OfferedSubject.SY=$1 AND OfferedSubject.Sem=$2 AND OfferedSubject.subjcode=$3 "+
+								"  AND OfferedSubject.is_restricted=false) as qry ";
+			db.query(Query,[sy,sem,subjcode,progcode],(err,table) =>{
+				if(err){
+					console.log(err);
+				}
+				else {
+						db.end();
+						response.send(table.rows);
+				}
+			})
+		}
+	})
+});
+
+//** END of getting sections of selected course ** //
+
+//** Enroll Course ** //
+router.post('/enrollCourse', function(request, response) {
+	var studid = request.body.studid
+	var sy = request.body.sy;
+	var sem = request.body.sem;
+	var subjcode = request.body.subjcode;
+	var section = request.body.section;
+	var progcode = request.body.progcode;
+	var courseno = request.body.courseno;
+	var maxload = request.body.maxload;
+
+	var is_allowed=0,load=0;
+	var message = "";
+	var result=[];
+
+	pool.connect((err,db,done)=>{
+		if(err){
+			console.log(err);
+		}
+		else {
+			var Query = "SELECT sum(unit) as load from "+
+									" (SELECT subjcode, unit FROM ( "+
+									" SELECT distinct R.subjcode,subject.unit "+
+									"  , (select d.grade from registration d where d.subjcode=r.subjcode and d.studid=r.studid and not(d.sy=r.sy and d.sem ilike r.sem) order by d.sy desc, d.sem desc limit 1) AS GR "+
+									" FROM subject,registration R "+
+									" WHERE subject.subjcode=R.subjcode  "+
+									"  and not(R.subjcode like 'NSTP%' OR R.subjcode like 'MS %' OR R.subjcode like 'ENGL R%'  OR R.subjcode like 'MATH R%') "+
+									"  and studid=$1 and sy=$2 and sem=$3) AS A "+
+									" WHERE (not GR IN ('IN PROG', 'IN PROGRESS')) OR GR ISNULL "+
+									" UNION "+
+									" SELECT distinct registration.subjcode,subject.lec as unit "+
+									" FROM subject,registration "+
+									" WHERE subject.subjcode=registration.subjcode and (registration.subjcode like 'ENGL R%' OR registration.subjcode like 'MATH R%') "+
+									" and studid=$1 and sy=$2 and sem=$3) as qry ";
+			db.query(Query,[studid,sy,sem],(err,table) =>{
+				if(err){
+					console.log(err);
+				}
+				else {
+						is_allowed = 0;
+						load = table.rows[0].load;
+
+						var Query1 = " SELECT * from offeredFor where subjcode=$1 and section=$2 "+
+          								" and progcode=$3 and sy=$4 and sem=$5 ";
+						db.query(Query1,[subjcode,section,progcode,sy,sem],(err,table) =>{
+							if(err){
+								console.log(err);
+							}
+							else {
+									var is_allowed = table.rows.length;
+
+									var Query2 = " SELECT subjcode, unit FROM (SELECT s.unit, s.subjcode " +
+											        " , (select d.grade from registration d where d.subjcode=s.subjcode and d.studid=$1  " +
+											        " and not(d.sy=$3 and d.sem ilike $4) order by d.sy desc, d.sem desc limit 1) AS GR  " +
+											        " from subject s where s.subjcode=$2 AND not(s.subjcode like ''NSTP%'' OR s.subjcode like ''MS %'' )) AS A  " +
+											        " WHERE (not GR IN (''IN PROG'', ''IN PROGRESS'')) OR GR ISNULL ";
+									db.query(Query2,[studid,subjcode,sy,sem],(err,table) =>{
+										if(err){
+											console.log(err);
+										}
+										else {
+												load = load + table.rows[0].unit
+
+												var Query3 = " SELECT is_stud_conflict($1,$2,$3,$4,$5) as can_add ";
+												db.query(Query3,[studid,subjcode,section,sy,sem],(err,table) =>{
+													if(err){
+														console.log(err);
+													}
+													else {
+															var can_add = table.rows[0].can_add;
+															if(can_add === 'false'){
+																	message = "WARNING! " + courseno + " is conflict with other schedule.";
+																	//result.push(message);
+																	db.end();
+																	response.send({message,add: "FALSE"});
+															}
+															// else if(can_add === 'false'  && (is_dean=== 'false')){
+															// 	message = "Only the Dean's account can add conflict schedule.";
+															// }
+															if( load <= maxload && can_add ==='true'){
+																var Query4 = " INSERT INTO registration (studid,sy,sem,subjcode,section) "+
+            																" VALUES($1,$4,$5,$2,$3) ";
+																db.query(Query4,[studid,subjcode,section,sy,sem],(err,table) =>{
+																	if(err){
+																		console.log(err);
+																	}
+																	else {
+																		message = "Added";
+																		//result.push(message);
+																		db.end();
+																		response.send({message,add: "TRUE"});
+																	}
+																})
+															}else if( load <= maxload && can_add == 'false'){
+																	var Query4 = " INSERT INTO registration (studid,sy,sem,subjcode,section) "+
+	            																" VALUES($1,$4,$5,$2,$3) ";
+																	db.query(Query4,[studid,subjcode,section,sy,sem],(err,table) =>{
+																		if(err){
+																			console.log(err);
+																		}
+																		else {
+																			message = "Added";
+																			//result.push(message);
+																			db.end();
+																			response.send({message,add: "TRUE"});
+																		}
+																	})
+															}else if(load > maxload){
+																message = "ERROR: Maximum study load exceeded.";
+																//result.push({message,add: "FALSE"});
+																db.end();
+																response.send({message,add: "FALSE"});
+															}else{
+																message ="ERROR: Unable to add course offering.";
+																//result.push({message,add: "FALSE"});
+																db.end();
+																response.send({message,add: "FALSE"});
+															}
+													}
+												})
+										}
+									})
+							}
+						})
+				}
+			})
+		}
+	})
+});
+//** END of getting sections of selected course ** //
+
+//** Cancel enrolling course **//
+router.post('/cancelEnrollCourse', function(request, response) {
+	var studid = request.body.studid
+	var sy = request.body.sy;
+	var sem = request.body.sem;
+	var subjcode = request.body.subjcode;
+	var section = request.body.section;
+
+	pool.connect((err,db,done)=>{
+		if(err){
+			console.log(err);
+		}
+		else {
+			var Query = " DELETE from registration "+
+					        " WHERE studid=:idno AND sy=:sy AND sem=:sem "+
+					        " AND subjcode=:subjcode AND section=:section ";
+			db.query(Query,[studid,sy,sem,subjcode,section],(err,table) =>{
+				if(err){
+					console.log(err);
+				}
+				else {
+						var Query1 ="SELECT distinct REGISTRATION.StudID, REGISTRATION.subjcode, REGISTRATION.section, REGISTRATION.SY, REGISTRATION.Sem, Schedule.days, Schedule.fromtime, Schedule.totime, "+
+					             " SUBJECT.courseno,Schedule.fromtime,(to_char(to_timestamp(schedule.fromtime::text,'HH24:MI'),'HH12:MI AM')||'-'||to_char(to_timestamp(schedule.totime::text,'HH24:MI'),'HH12:MI AM'))::varchar as skedtime "+
+					             "  ,subject.description::varchar as description, subject.lab, subject.lec, subject.unit, OfferedSubject.is_requested, REGISTRATION.datevalidated "+
+											 " FROM SUBJECT INNER JOIN ((OfferedSubject INNER JOIN Schedule ON (OfferedSubject.Sem = Schedule.Sem) AND (OfferedSubject.SY = Schedule.SY) AND (OfferedSubject.section = Schedule.section) AND (OfferedSubject.subjcode = Schedule.subjcode)) "+
+											 " INNER JOIN REGISTRATION ON (OfferedSubject.Sem = REGISTRATION.Sem) AND (OfferedSubject.SY = REGISTRATION.SY) AND (OfferedSubject.section = REGISTRATION.section) AND (OfferedSubject.subjcode = REGISTRATION.subjcode)) ON SUBJECT.subjcode = OfferedSubject.subjcode "+
+											 " WHERE REGISTRATION.StudID=$1 AND REGISTRATION.SY=$2 AND REGISTRATION.Sem=$3 "+
+											 " ORDER BY courseno ";
+						 db.query(Query1,[studid,sy,sem],(err,table) =>{
+								if(err){
+									console.log(err);
+								}else{
+									if(table.rows.length > 0){
+										db.end();
+										response.send({can_delete: "FALSE"});
+									}else{
+										db.end();
+										response.send({message:"WARNING! Do you wish to delete the student''s record of the current semester?", can_delete: "TRUE"});
+									}
+								}
+						})
+				}
+			})
+		}
+	})
+});
+//** END of Cancelling enrolled course **//
+
+//** Delete student's record for the current semester **//
+router.post('/deleteStudentrec', function(request, response) {
+	var studid = request.body.studid
+	var sy = request.body.sy;
+	var sem = request.body.sem;
+	pool.connect((err,db,done)=>{
+		if(err){
+			console.log(err);
+		}
+		else {
+			var Query = " DELETE from studtuitionlab "+
+					        " WHERE studid=:idno AND sy=:sy AND sem=:sem ";
+			db.query(Query,[studid,sy,sem,subjcode,section],(err,table) =>{
+				if(err){
+					console.log(err);
+				}
+				else {
+						var Query1 ="DELETE from studsubjmisc "+
+								        " WHERE studid=:idno AND sy=:sy AND sem=:sem";
+						 db.query(Query1,[studid,sy,sem],(err,table) =>{
+								if(err){
+									console.log(err);
+								}else{
+									var Query2 ="DELETE from studbalance "+
+											        " WHERE studid=:idno AND sy=:sy AND sem=:sem";
+									 db.query(Query2,[studid,sy,sem],(err,table) =>{
+											if(err){
+												console.log(err);
+											}else{
+												var Query2 ="DELETE from semstudent "+
+														        " WHERE studid=:idno AND sy=:sy AND sem=:sem";
+												 db.query(Query2,[studid,sy,sem],(err,table) =>{
+														if(err){
+															console.log(err);
+														}else{
+															db.end();
+															response.send({message: "Successfully deleted!"});
+														}
+												})
+											}
+									})
+								}
+						})
+				}
+			})
+		}
+	})
+});
+//**END Deleting student's record for the current semester**//
 
 //****Add 1 slot with  verification code ***//
 router.post('/verificationCodeSubmission', function(request, response) {
