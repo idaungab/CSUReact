@@ -1143,6 +1143,55 @@ router.post('/getCategoryProgram',function(request,response){
 	})
 	// **** End of Program ****//
 
+	// **** Start of Getting SY and SEM data ****//
+	router.get('/getSYSEM',function(request,response){
+
+		pool.connect((err,db,done)=>{
+			if(err){
+				console.log(err)
+			}
+			else{
+				var Query = "SELECT * FROM sysem ORDER BY sy desc, sem desc LIMIT 1";
+				db.query(Query,(err,table) =>{
+					if(err){
+						console.log(err)
+					}
+					else{
+						db.end();
+						response.send(table.rows)
+					}
+				})
+			}
+		})
+	})
+	// **** End of Getting SY and SEM data ****//
+
+	// **** Start of Checking if user has access to subject entry ****//
+	router.post('/checkAccess',function(request,response){
+		var scode = request.body.scode;
+		var sy = request.body.sy;
+		var sem = request.body.sem;
+		var status = request.body.status;
+		pool.connect((err,db,done)=>{
+			if(err){
+				console.log(err)
+			}
+			else{
+				var Query = "SELECT grantctrl_subjectoffering('janavarro',$1,$2,$3,$4) AS g";
+				db.query(Query,[scode,sy,sem,status],(err,table) =>{
+					if(err){
+						console.log(err)
+					}
+					else{
+						db.end();
+						response.send(table.rows)
+					}
+				})
+			}
+		})
+	})
+	// **** End of Checking if user has access to subject entry ****//
+
 //***************************
 //END Scheduling Module *****
 //***************************
@@ -1446,6 +1495,44 @@ router.post('/getBlocks',function(request,response){
 });
 //** End of getting studenttag **//
 
+//*** Get student's max load ***//
+router.post('/getMaxload',function(request,response){
+	var studid = request.body.studid;
+	var sy = request.body.sy;
+	var sem = request.body.sem;
+
+	pool.connect((err,db,done) =>{
+		if(err){
+			console.log(err);
+		}
+		else{
+			var Query = "SELECT maxload_d7($1,$2,$3) as maxload";
+
+			db.query(Query,[studid,sy,sem],(err,table) =>{
+				if(err){
+					console.log(err);
+				}else{
+					var result =table.rows
+					var Query1 = "SELECT cur_scholastic_status($1) as status";
+
+					db.query(Query1,[studid],(err,table) =>{
+						if(err){
+							console.log(err);
+						}else{
+							var status
+							result.push(table.rows);
+							console.log(result);
+							db.end();
+							response.send(result);
+						}
+					})
+				}
+			})
+		}
+	})
+});
+//*** END of getting student's maxload ***//
+
 //** Get student data from prior sem **//
 
 router.post('/whenNotFoundinStudenttag',function(request,response){
@@ -1566,7 +1653,7 @@ router.post('/evalIfNotELEMHS',function(request,response){
 								console.log(err);
 							}else{
 									result.push(table.rows);
-									console.log(result);
+									//console.log(result);
 									db.end();
 									response.send(result);
 							}
@@ -1898,6 +1985,10 @@ router.post('/zqryreg', function(request, response) {
 });
 //**** End of register component ***//
 
+//**** Offered ***//
+
+//*** END of Offered ***//
+
 //**Get subject details**//
 router.get('/getCourses', function(req, res) {
   pool.connect((err,db,done)=>{
@@ -1959,8 +2050,15 @@ router.post('/getSections', function(request, response) {
 					console.log(err);
 				}
 				else {
+					if(table.rows.length > 0){
+						var result = table.rows;
 						db.end();
-						response.send(table.rows);
+						response.send({result,haveSection: "TRUE"});
+					}else{
+						db.end();
+						response.send({haveSection: "FALSE"});
+					}
+
 				}
 			})
 		}
@@ -2009,7 +2107,13 @@ router.post('/enrollCourse', function(request, response) {
 				}
 				else {
 						is_allowed = 0;
-						load = table.rows[0].load;
+						if(table.rows[0].load === null){
+							load = 0;
+						}else{
+							load = table.rows[0].load;
+						}
+
+						console.log(load);
 
 						var Query1 = " SELECT * from offeredFor where subjcode=$1 and section=$2 "+
           								" and progcode=$3 and sy=$4 and sem=$5 ";
@@ -2023,15 +2127,15 @@ router.post('/enrollCourse', function(request, response) {
 									var Query2 = " SELECT subjcode, unit FROM (SELECT s.unit, s.subjcode " +
 											        " , (select d.grade from registration d where d.subjcode=s.subjcode and d.studid=$1  " +
 											        " and not(d.sy=$3 and d.sem ilike $4) order by d.sy desc, d.sem desc limit 1) AS GR  " +
-											        " from subject s where s.subjcode=$2 AND not(s.subjcode like ''NSTP%'' OR s.subjcode like ''MS %'' )) AS A  " +
-											        " WHERE (not GR IN (''IN PROG'', ''IN PROGRESS'')) OR GR ISNULL ";
+											        " from subject s where s.subjcode=$2 AND not(s.subjcode like 'NSTP%' OR s.subjcode like 'MS %' )) AS A  " +
+											        " WHERE (not GR IN ('IN PROG', 'IN PROGRESS')) OR GR ISNULL ";
 									db.query(Query2,[studid,subjcode,sy,sem],(err,table) =>{
 										if(err){
 											console.log(err);
 										}
 										else {
-												load = load + table.rows[0].unit
-
+												load = parseInt(load) + parseInt(table.rows[0].unit,10);
+												console.log(load);
 												var Query3 = " SELECT is_stud_conflict($1,$2,$3,$4,$5) as can_add ";
 												db.query(Query3,[studid,subjcode,section,sy,sem],(err,table) =>{
 													if(err){
@@ -2039,7 +2143,8 @@ router.post('/enrollCourse', function(request, response) {
 													}
 													else {
 															var can_add = table.rows[0].can_add;
-															if(can_add === 'false'){
+															console.log(can_add);
+															if(can_add === false){
 																	message = "WARNING! " + courseno + " is conflict with other schedule.";
 																	//result.push(message);
 																	db.end();
@@ -2048,21 +2153,21 @@ router.post('/enrollCourse', function(request, response) {
 															// else if(can_add === 'false'  && (is_dean=== 'false')){
 															// 	message = "Only the Dean's account can add conflict schedule.";
 															// }
-															if( load <= maxload && can_add ==='true'){
-																var Query4 = " INSERT INTO registration (studid,sy,sem,subjcode,section) "+
-            																" VALUES($1,$4,$5,$2,$3) ";
-																db.query(Query4,[studid,subjcode,section,sy,sem],(err,table) =>{
-																	if(err){
-																		console.log(err);
-																	}
-																	else {
-																		message = "Added";
-																		//result.push(message);
-																		db.end();
-																		response.send({message,add: "TRUE"});
-																	}
-																})
-															}else if( load <= maxload && can_add == 'false'){
+															else if( load <= maxload && can_add === true){
+																	var Query4 = " INSERT INTO registration (studid,sy,sem,subjcode,section) "+
+	            																" VALUES($1,$4,$5,$2,$3) ";
+																	db.query(Query4,[studid,subjcode,section,sy,sem],(err,table) =>{
+																		if(err){
+																			console.log(err);
+																		}
+																		else {
+																			message = "Added";
+																			//result.push(message);
+																			db.end();
+																			response.send({message,add: "TRUE"});
+																		}
+																	})
+															}else if( load <= maxload && can_add == false){
 																	var Query4 = " INSERT INTO registration (studid,sy,sem,subjcode,section) "+
 	            																" VALUES($1,$4,$5,$2,$3) ";
 																	db.query(Query4,[studid,subjcode,section,sy,sem],(err,table) =>{
@@ -2100,6 +2205,50 @@ router.post('/enrollCourse', function(request, response) {
 });
 //** END of getting sections of selected course ** //
 
+//**** Getting enrolled courses ***//
+router.post('/getEnrolledCourses', function(request, response) {
+	var studid = request.body.studid;
+	var sy = request.body.sy;
+	var sem = request.body.sem;
+	var subjcode = request.body.subjcode;
+	var courses = [];
+
+	pool.connect((err,db,done)=>{
+		if(err){
+			console.log(err);
+		}
+		else {
+			var Query = " SELECT * from registration where studid=$1 and sy=$2 and sem=$3 ";
+			db.query(Query,[studid,sy,sem],(err,table) =>{
+				if(err){
+					console.log(err);
+				}
+				else {
+					if(table.rows.length > 0){
+							for(var i=0; i< table.rows.length; i++){
+								var sub = table.rows[i].subjcode
+								var Query = " SELECT * from subject where subjcode = $1";
+								db.query(Query,[sub],(err,table) =>{
+									if(err){
+										console.log(err);
+									}
+									else {
+										if(table.rows.length > 0){
+												for(var i=0; i< table.rows.length; i++){
+
+												}
+										}
+									}
+								})
+							}
+					}
+				}
+			})
+		}
+	})
+});
+//**** END of getting enrolled courses ***//
+
 //** Cancel enrolling course **//
 router.post('/cancelEnrollCourse', function(request, response) {
 	var studid = request.body.studid
@@ -2114,13 +2263,14 @@ router.post('/cancelEnrollCourse', function(request, response) {
 		}
 		else {
 			var Query = " DELETE from registration "+
-					        " WHERE studid=:idno AND sy=:sy AND sem=:sem "+
-					        " AND subjcode=:subjcode AND section=:section ";
+					        " WHERE studid=$1 AND sy=$2 AND sem=$3 "+
+					        " AND subjcode=$4 AND section=$5 ";
 			db.query(Query,[studid,sy,sem,subjcode,section],(err,table) =>{
 				if(err){
 					console.log(err);
 				}
 				else {
+					console.log("deleted!");
 						var Query1 ="SELECT distinct REGISTRATION.StudID, REGISTRATION.subjcode, REGISTRATION.section, REGISTRATION.SY, REGISTRATION.Sem, Schedule.days, Schedule.fromtime, Schedule.totime, "+
 					             " SUBJECT.courseno,Schedule.fromtime,(to_char(to_timestamp(schedule.fromtime::text,'HH24:MI'),'HH12:MI AM')||'-'||to_char(to_timestamp(schedule.totime::text,'HH24:MI'),'HH12:MI AM'))::varchar as skedtime "+
 					             "  ,subject.description::varchar as description, subject.lab, subject.lec, subject.unit, OfferedSubject.is_requested, REGISTRATION.datevalidated "+
@@ -2134,7 +2284,7 @@ router.post('/cancelEnrollCourse', function(request, response) {
 								}else{
 									if(table.rows.length > 0){
 										db.end();
-										response.send({can_delete: "FALSE"});
+										response.send({message: "Successfully deleted!",can_delete: "FALSE"});
 									}else{
 										db.end();
 										response.send({message:"WARNING! Do you wish to delete the student''s record of the current semester?", can_delete: "TRUE"});
@@ -2159,26 +2309,26 @@ router.post('/deleteStudentrec', function(request, response) {
 		}
 		else {
 			var Query = " DELETE from studtuitionlab "+
-					        " WHERE studid=:idno AND sy=:sy AND sem=:sem ";
-			db.query(Query,[studid,sy,sem,subjcode,section],(err,table) =>{
+					        " WHERE studid=$1 AND sy=$2 AND sem=$3 ";
+			db.query(Query,[studid,sy,sem],(err,table) =>{
 				if(err){
 					console.log(err);
 				}
 				else {
 						var Query1 ="DELETE from studsubjmisc "+
-								        " WHERE studid=:idno AND sy=:sy AND sem=:sem";
+								        " WHERE studid=$1 AND sy=$2 AND sem=$3";
 						 db.query(Query1,[studid,sy,sem],(err,table) =>{
 								if(err){
 									console.log(err);
 								}else{
 									var Query2 ="DELETE from studbalance "+
-											        " WHERE studid=:idno AND sy=:sy AND sem=:sem";
+											        " WHERE studid=$1 AND sy=$2 AND sem=$3";
 									 db.query(Query2,[studid,sy,sem],(err,table) =>{
 											if(err){
 												console.log(err);
 											}else{
 												var Query2 ="DELETE from semstudent "+
-														        " WHERE studid=:idno AND sy=:sy AND sem=:sem";
+														        " WHERE studid=$1 AND sy=$2 AND sem=$3";
 												 db.query(Query2,[studid,sy,sem],(err,table) =>{
 														if(err){
 															console.log(err);
@@ -2204,6 +2354,7 @@ router.post('/verificationCodeSubmission', function(request, response) {
 	var sy = request.body.sy;
 	var sem = request.body.sem;
 	var vercode = request.body.vercode;
+	var maxload = request.body.maxload;
 
 	pool.connect((err,db,done)=>{
 		if(err){
@@ -2216,44 +2367,153 @@ router.post('/verificationCodeSubmission', function(request, response) {
 					console.log(err);
 				}
 				else {
-						if(table.rows.length > 0){
-							var result = table.rows;
-							var subjcode = table.rows[0].subjcode;
-							var section = table.rows[0].section;
-							var Query1 = "SELECT subjcode, unit FROM (SELECT s.unit, s.subjcode " +
-										        " , (SELECT d.grade FROM registration d WHERE d.subjcode=s.subjcode AND d.studid=$1 " +
-										        " AND not(d.sy=$2 AND d.sem ilike $3) ORDER BY d.sy desc, d.sem desc limit 1) AS GR " +
-										        " FROM subject s where s.subjcode=$4 AND not(s.subjcode like 'NSTP%' OR s.subjcode like 'MS %' )) AS A " +
-										        " WHERE (not GR IN ('IN PROG', 'IN PROGRESS')) OR GR ISNULL ";
-							db.query(Query,[studid,sy,sem,subjcode],(err,table) =>{
-								if(err){
-									console.log(err);
-								}
-								else {
-										result.push(table.rows);
-										var Query2 = "SELECT is_stud_conflict($1,$4,$5,$2,$3) as can_add";
-										db.query(Query,[studid,sy,sem,subjcode,section],(err,table) =>{
-											if(err){
-												console.log(err);
-											}
-											else {
-													result.push(table.rows);
-													response.send(result);
-													console.log(result);
-											}
-										})
-								}
-							})
-						}
+					if(table.rows.length > 0){
+						var versubjcode = table.rows[0].subjcode;
+						var versection = table.rows[0].section;
+
+						var Query = "SELECT sum(unit) as load from "+
+												" (SELECT subjcode, unit FROM ( "+
+												" SELECT distinct R.subjcode,subject.unit "+
+												"  , (select d.grade from registration d where d.subjcode=r.subjcode and d.studid=r.studid and not(d.sy=r.sy and d.sem ilike r.sem) order by d.sy desc, d.sem desc limit 1) AS GR "+
+												" FROM subject,registration R "+
+												" WHERE subject.subjcode=R.subjcode  "+
+												"  and not(R.subjcode like 'NSTP%' OR R.subjcode like 'MS %' OR R.subjcode like 'ENGL R%'  OR R.subjcode like 'MATH R%') "+
+												"  and studid=$1 and sy=$2 and sem=$3) AS A "+
+												" WHERE (not GR IN ('IN PROG', 'IN PROGRESS')) OR GR ISNULL "+
+												" UNION "+
+												" SELECT distinct registration.subjcode,subject.lec as unit "+
+												" FROM subject,registration "+
+												" WHERE subject.subjcode=registration.subjcode and (registration.subjcode like 'ENGL R%' OR registration.subjcode like 'MATH R%') "+
+												" and studid=$1 and sy=$2 and sem=$3) as qry ";
+							db.query(Query,[studid,sy,sem],(err,table) =>{
+								 if(err){
+									 console.log(err);
+								 }
+								 else {
+										 var is_allowed = 1;
+										 var restricted = false;
+										 let load = table.rows[0].load;
+										 var Query1 = "SELECT subjcode, unit FROM (SELECT s.unit, s.subjcode " +
+			 										        " , (SELECT d.grade FROM registration d WHERE d.subjcode=s.subjcode AND d.studid=$1 " +
+			 										        " AND not(d.sy=$2 AND d.sem ilike $3) ORDER BY d.sy desc, d.sem desc limit 1) AS GR " +
+			 										        " FROM subject s where s.subjcode=$4 AND not(s.subjcode like 'NSTP%' OR s.subjcode like 'MS %' )) AS A " +
+			 										        " WHERE (not GR IN ('IN PROG', 'IN PROGRESS')) OR GR ISNULL ";
+			 							db.query(Query1,[studid,sy,sem,subjcode],(err,table) =>{
+			 								if(err){
+			 									console.log(err);
+			 								}
+			 								else {
+													load = load + table.rows[0].unit;
+
+													var Query3 = " SELECT is_stud_conflict($1,$2,$3,$4,$5) as can_add ";
+													db.query(Query3,[studid,versubjcode,versection,sy,sem],(err,table) =>{
+														if(err){
+															console.log(err);
+														}
+														else {
+																var can_add = table.rows[0].can_add;
+																// console.log(can_add);
+																if(can_add === false){
+																		message = "WARNING! " + courseno + " is conflict with other schedule.";
+																		db.end();
+																		response.send({message,add: "FALSE"});
+																}
+																// else if(can_add === 'false'  && (is_dean=== 'false')){
+																// 	message = "Only the Dean's account can add conflict schedule.";
+																// }
+																else if(load <= maxload && can_add === true ){
+																	var Query3 = " SELECT ((slots-enrollees)<1) as puno FROM offeredsubject WHERE subjcode=$1 AND section=$2 AND sy=$3 AND sem=$4 ";
+																	db.query(Query3,[versubjcode,versection,sy,sem],(err,table) =>{
+																		if(err){
+																			console.log(err);
+																		}
+																		else {
+																				if(table.rows.length > 0){
+																					if(table.rows[0].puno){
+
+																						var Query = " UPDATE offeredsubject SET slots=slots+1 WHERE subjcode=$1 AND section=$2 AND sy=$3 AND sem=$4 ";
+																						db.query(Query,[versubjcode,versection,sy,sem],(err,table) =>{
+																							if(err){
+																								console.log(err);
+																							}
+																							else {
+																								console.log("UPDATED!");
+																							}
+																						})
+																					}
+																					var Query = " INSERT INTO registration (studid,sy,sem,subjcode,section) VALUES(:studid,:sy,:sem,:subjcode,:section) ";
+																					db.query(Query,[studid,sy,sem,versubjcode,versection],(err,table) =>{
+																						if(err){
+																							console.log(err);
+																						}
+																						else {
+																							console.log("INSERTED!");
+																						}
+																					})
+																				}else{
+																					db.end();
+																					response.send({message: "Course Offering was dissolved."})
+																				}
+																		}
+																	})
+																}else if(load <= maxload && can_add === false){ //&& is_dean===true && Res = yes
+																	var Query3 = " SELECT ((slots-enrollees)<1) as puno FROM offeredsubject WHERE subjcode=$1 AND section=$2 AND sy=$3 AND sem=$4 ";
+																	db.query(Query3,[versubjcode,versection,sy,sem],(err,table) =>{
+																		if(err){
+																			console.log(err);
+																		}
+																		else {
+																			if(table.rows.length > 0){
+																				if(table.rows[0].puno){
+
+																					var Query = " UPDATE offeredsubject SET slots=slots+1 WHERE subjcode=$1 AND section=$2 AND sy=$3 AND sem=$4 ";
+																					db.query(Query,[versubjcode,versection,sy,sem],(err,table) =>{
+																						if(err){
+																							console.log(err);
+																						}
+																						else {
+																							console.log("UPDATED!");
+																						}
+																					})
+																				}
+																				var Query = " INSERT INTO registration (studid,sy,sem,subjcode,section) VALUES(:studid,:sy,:sem,:subjcode,:section) ";
+																				db.query(Query,[studid,sy,sem,versubjcode,versection],(err,table) =>{
+																					if(err){
+																						console.log(err);
+																					}
+																					else {
+																						console.log("INSERTED!");
+																					}
+																				})
+																			}else{
+																				db.end();
+																				response.send({message: "Course Offering was dissolved."})
+																			}
+																		}
+																	})
+																}else if(load > maxload){
+																	db.end();
+																	response.send({message:"ERROR: Maximum study load exceeded." })
+																}else{
+																	db.end();
+																	response.send({message: "ERROR: Unable to add course offering."});
+																}
+						 								}
+						 							})
+											 }
+										 })
+									}
+								})
+					}else{
+						db.end();
+						response.send({message: "Unmatching Verification Code for this student."});
+					}
 				}
 			})
 		}
 	})
 });
 //**** END of adding slot from verification code***//
-
-
-
 
 //***************************
 //* End of Enrolment Module *
