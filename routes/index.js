@@ -1192,6 +1192,47 @@ router.post('/getCategoryProgram',function(request,response){
 	})
 	// **** End of Checking if user has access to subject entry ****//
 
+	// **** Start of Checking if user has access to subject entry ****//
+	router.post('/saveSchedule',function(request,response){
+
+		var conflict = request.body.conflict;
+		var stype = request.body.stype;
+		var subjcode = request.body.subjcode;
+		var days = request.body.days;
+		var fromtime = request.body.fromtime;
+		var totime = request.body.totime;
+		var instructor = request.body.instructor;
+		var room = request.body.room;
+		var building = request.body.building;
+		var sy = request.body.sy;
+		var sem = request.body.sem;
+		var slot = request.body.slot;
+		var is_requested = request.body.is_requested;
+		var is_restricted = request.body.is_restricted;
+		var yearlevel = request.body.yearlevel;
+		var progcode = request.body.progcode;
+		var block = request.body.block;
+		var sdate = request.body.sdate;
+		var iscwts = request.body.iscwts;
+		pool.connect((err,db,done)=>{
+			if(err){
+				console.log(err)
+			}
+			else{
+				var Query = "SELECT add_newsection($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)";
+				db.query(Query,[conflict,stype,subjcode,days,fromtime,totime,instructor,room,building,sy,sem,slot,is_requested,is_restricted,yearlevel,progcode,block,sdate,iscwts],(err,table) =>{
+					if(err){
+						console.log(err)
+					}
+					else{
+						db.end();
+						response.send(table.rows)
+					}
+				})
+			}
+		})
+	})
+	// **** End of Checking if user has access to subject entry ****//
 //***************************
 //END Scheduling Module *****
 //***************************
@@ -1670,7 +1711,7 @@ router.post('/evalIfNotELEMHS',function(request,response){
 //**END of If student is not ELEM or HS **//
 
 //***Offered courses to given student data **//
-router.post('/checkOfferingToStudentANDClearance', function(request, response) {
+router.post('/checkOfferingToStudent', function(request, response) {
 	var studid = request.body.studid;
 	var sy = request.body.sy;
 	var sem = request.body.sem;
@@ -1704,24 +1745,8 @@ router.post('/checkOfferingToStudentANDClearance', function(request, response) {
 					console.log(err);
 				}
 				else {
-						var result = table.rows;
-						var Query = "SELECT * FROM clearance.studentclearances WHERE studid=$1 AND datecleared isnull";
-						db.query(Query,[studid],(err,table) =>{
-							if(err){
-								console.log(err);
-							}
-							else {
-								if(table.rows.length > 0){
-									//result.push({message: 'Sorry student cannot proceed enrollment. Student has uncleared clearance.',cleared:'false'});
-									db.end();
-									response.send({result,message: 'Sorry student cannot proceed enrollment. Student has uncleared clearance.',cleared:'false'});
-								}else{
-									//result.push({message: 'All accounts are settled', cleared:'true'});
-									db.end();
-									response.send({result,message: 'All accounts are settled', cleared:'true'});
-								}
-							}
-						})
+					db.end();
+					response.send(table.rows);
 				}
 			})
 		}
@@ -1750,7 +1775,6 @@ router.post('/checkClearance', function(request, response) {
 						db.end();
 						response.send({message: 'All accounts are settled', cleared:'true'});
 					}
-
 				}
 			})
 		}
@@ -2134,7 +2158,7 @@ router.post('/enrollCourse', function(request, response) {
 											console.log(err);
 										}
 										else {
-												load = parseInt(load) + parseInt(table.rows[0].unit,10);
+												load = parseInt(load) + parseInt(table.rows[0].unit);
 												console.log(load);
 												var Query3 = " SELECT is_stud_conflict($1,$2,$3,$4,$5) as can_add ";
 												db.query(Query3,[studid,subjcode,section,sy,sem],(err,table) =>{
@@ -2270,7 +2294,6 @@ router.post('/cancelEnrollCourse', function(request, response) {
 					console.log(err);
 				}
 				else {
-					console.log("deleted!");
 						var Query1 ="SELECT distinct REGISTRATION.StudID, REGISTRATION.subjcode, REGISTRATION.section, REGISTRATION.SY, REGISTRATION.Sem, Schedule.days, Schedule.fromtime, Schedule.totime, "+
 					             " SUBJECT.courseno,Schedule.fromtime,(to_char(to_timestamp(schedule.fromtime::text,'HH24:MI'),'HH12:MI AM')||'-'||to_char(to_timestamp(schedule.totime::text,'HH24:MI'),'HH12:MI AM'))::varchar as skedtime "+
 					             "  ,subject.description::varchar as description, subject.lab, subject.lec, subject.unit, OfferedSubject.is_requested, REGISTRATION.datevalidated "+
@@ -2282,12 +2305,13 @@ router.post('/cancelEnrollCourse', function(request, response) {
 								if(err){
 									console.log(err);
 								}else{
+									console.log(table.rows);
 									if(table.rows.length > 0){
 										db.end();
-										response.send({message: "Successfully deleted!",can_delete: "FALSE"});
+										response.send({message: "Course successfully deleted!",can_delete: "TRUE"});
 									}else{
 										db.end();
-										response.send({message:"WARNING! Do you wish to delete the student''s record of the current semester?", can_delete: "TRUE"});
+										response.send({message:"WARNING! Do you wish to delete the student''s record of the current semester?", can_delete: "FALSE"});
 									}
 								}
 						})
@@ -2514,6 +2538,116 @@ router.post('/verificationCodeSubmission', function(request, response) {
 	})
 });
 //**** END of adding slot from verification code***//
+
+//*** General Percentage Average **//
+router.post('/getGPA',function(request,response){
+	var studid = request.body.studid;
+	var prevsy = request.body.prevsy;
+	var prevsem = request.body.prevsem;
+
+	pool.connect((err,db,done) =>{
+		if(err){
+			console.log(err);
+		}
+		else{
+			var Query = "SELECT s.sy, s.sem, s.studid, s.studmajor, s.cur_year, count(r.subjcode) AS subjcnt "+
+						      " FROM semstudent s, (select * from sysem where sy||sem<$2||$3) as y, registration r, subject j "+
+						      " WHERE s.sy=y.sy and s.sem=y.sem and s.studid=r.studid and s.sy=r.sy and s.sem=r.sem and j.subjcode=r.subjcode "+
+						      "  and s.studid=$1 and not (r.subjcode ilike 'NSTP%' or r.subjcode ilike 'MS %') and not description ilike '%military%' "+
+						      " GROUP BY s.sy, s.sem, s.studid, s.studmajor, s.cur_year having sum(case when grade='DRP' or grade isnull then 0 else 1 end) > 0 "+
+						      " ORDER BY s.sy desc, s.sem DESC LIMIT 1";
+
+			db.query(Query,[studid,prevsy,prevsem],(err,table) =>{
+				if(err){
+					console.log(err);
+				}else{
+					if(table.rows.length > 0){
+						var Query = "SELECT gpa($1, $2, $3) AS gpa";
+
+						db.query(Query,[studid,prevsy,prevsem],(err,table) =>{
+							if(err){
+								console.log(err);
+							}else{
+									var gpa = table.rows[0].gpa;
+									var Query = "UPDATE semstudent SET gpa=$4 WHERE studid=$1 and sy=$2 and sem=$3";
+
+									db.query(Query,[studid,prevsy,prevsem,gpa],(err,table) =>{
+										if(err){
+											console.log(err);
+										}else{
+												db.end();
+												response.send({message:"Student's GPA updated!"});
+										}
+									})
+							}
+						})
+					}
+				}
+			})
+		}
+	})
+});
+//*** END General Percentage Average **//
+
+//**** Printing of COR **//
+router.post('/printCOR',function(request,response){
+	var progcode = request.body.progcode;
+	var sy = request.body.sy;
+	var sem = request.body.sem;
+	var progcode = request.body.progcode;
+
+	pool.connect((err,db,done) =>{
+		if(err){
+			console.log(err);
+		}
+		else{
+			var Query = "SELECT sysemno from sysem where sy=$1 and sem=$2";
+
+			db.query(Query,[sy,sem],(err,table) =>{
+				if(err){
+					console.log(err);
+				}else{
+						let sysemno = table.rows[0].sysemno;
+						var Query = "SELECT * FROM program WHERE progcode=$1";
+
+						db.query(Query,[progcode],(err,table) =>{
+							if(err){
+								console.log(err);
+							}else{
+								if(sysemno < 24){  //School year 2007-2008 1st sem and below
+									var Query = "SELECT StudTuitionLab.StudID, StudTuitionLab.SY, StudTuitionLab.Sem, StudTuitionLab.AsCode, ASSESS.AsDesc, StudTuitionLab.Amount::NUMERIC(10,2) AS amount, FUND_TYPE.TypeCode, FUND_TYPE.AccDesc "+
+														"  FROM FUND_TYPE INNER JOIN (ASSESS INNER JOIN StudTuitionLab ON ASSESS.AsCode = StudTuitionLab.AsCode) ON FUND_TYPE.TypeCode = ASSESS.TypeCode  "+
+														"  WHERE (((StudTuitionLab.StudID)=$1) AND ((StudTuitionLab.SY)=$2) AND ((StudTuitionLab.Sem)=$3))  "+
+														"  ORDER BY TypeCode, AsDesc ";
+
+									db.query(Query,[studid,sy,sem],(err,table) =>{
+										if(err){
+											console.log(err);
+										}else{
+													var Query = "SELECT sum(StudTuitionLab.Amount)::::NUMERIC(10,2) as  totalamount  "+
+																			"  FROM FUND_TYPE INNER JOIN (ASSESS INNER JOIN StudTuitionLab ON ASSESS.AsCode = StudTuitionLab.AsCode) ON FUND_TYPE.TypeCode = ASSESS.TypeCode "+
+																			"  WHERE (((StudTuitionLab.StudID)=:studid) AND ((StudTuitionLab.SY)=:sy) AND ((StudTuitionLab.Sem)=:sem)) ";
+													db.query(Query,[studid,sy,sem],(err,table) =>{
+														if(err){
+															console.log(err);
+														}else{
+
+														}
+													})
+										}
+									})
+								}else if(sysemno < 36){
+									
+								}
+
+							}
+						})
+				}
+			})
+		}
+	})
+});
+//*** END of printing COR **//
 
 //***************************
 //* End of Enrolment Module *
