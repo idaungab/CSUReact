@@ -1220,7 +1220,7 @@ router.post('/getCategoryProgram',function(request,response){
 			}
 			else{
 				var Query = "SELECT add_newsection($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)";
-				db.query(Query,[conflict,stype,subjcode,days,fromtime,totime,instructor,room,building,sy,sem,slot,is_requested,is_restricted,yearlevel,progcode,block,sdate,iscwts],(err,table) =>{
+				db.query(Query,[conflict,subjcode,stype,days,fromtime,totime,instructor,room,building,sy,sem,slot,is_requested,is_restricted,yearlevel,progcode,block,sdate,iscwts],(err,table) =>{
 					if(err){
 						console.log(err)
 					}
@@ -2158,8 +2158,9 @@ router.post('/enrollCourse', function(request, response) {
 											console.log(err);
 										}
 										else {
+											console.log(table.rows);
 												load = parseInt(load) + parseInt(table.rows[0].unit);
-												console.log(load);
+
 												var Query3 = " SELECT is_stud_conflict($1,$2,$3,$4,$5) as can_add ";
 												db.query(Query3,[studid,subjcode,section,sy,sem],(err,table) =>{
 													if(err){
@@ -2358,7 +2359,7 @@ router.post('/deleteStudentrec', function(request, response) {
 															console.log(err);
 														}else{
 															db.end();
-															response.send({message: "Successfully deleted!"});
+															response.send({message: "Successfully deleted!", isdeleted:"TRUE"});
 														}
 												})
 											}
@@ -2636,8 +2637,73 @@ router.post('/printCOR',function(request,response){
 													})
 										}
 									})
-								}else if(sysemno < 36){
-									
+								}else if(sysemno < 36){				//*** Academic Year 2011-2012 1st sem and below
+									var Query = "SELECT * FROM sql_assess($1,$2,$3)";
+									db.query(Query,[studid,sy,sem],(err,table) =>{
+										if(err){
+											console.log(err);
+										}else{
+											var Query = "SELECT sum(amount)::::NUMERIC(10,2) AS totalamount FROM "+
+																	" (SELECT * FROM sql_assess($1,$2,$3)) AS qry";
+											db.query(Query,[studid,sy,sem],(err,table) =>{
+												if(err){
+													console.log(err);
+												}else{
+
+												}
+											})
+										}
+									})
+								}else{  		//*** Academic year 2011-2012 2nd sem and above, update due to new table in FARM
+									var Query = "SELECT * FROM "+
+															" (SELECT b.studid,b.acadyear as sy,b.semester as sem,b.type as ascode,c.description as asdesc,b.amount,a.typecode,f.accdesc "+
+															"  FROM fund_type f,link_fmis.billingtypes c, assess a,  "+
+															"  (SELECT c.studid,c.acadyear,c.semester,c.type,sum(c.amount) as amount  "+
+															"   FROM link_fmis.billingaccounts c  "+
+															"   WHERE c.studid=$1 and c.acadyear=$2 and c.semester=$3  "+
+															"   GROUP BY c.studid,c.acadyear,c.semester,c.type) as b  "+
+															"  WHERE f.typecode=a.typecode AND a.ascode=b.type AND b.type=c.code ORDER BY TypeCode, AsDesc) AS a  "+
+															" WHERE ascode NOT IN (1,360,416,417,418,419,421,422,423,2,411,412,413,414,415)  "+
+															" UNION  "+
+															" SELECT studid,sy,sem,ascode,asdesc,sum(amount) as amount,typecode,accdesc FROM  "+
+															" (SELECT studid,sy,sem,(case when ascode in (1,360,416,417,418,419,421,422,423) the1n 1 when ascode in (2,411,412,413,414,415) then 2 else ascode end) as ascode  "+
+															"  ,(case when ascode in (1,360,416,417,418,419,421,422,423) then ''Tuition'' when ascode in (2,411,412,413,414,415) then ''Laboratory'' else asdesc end) as asdesc,amount,typecode,accdesc  "+
+															"  FROM  "+
+															"  (SELECT b.studid,b.acadyear as sy,b.semester as sem,b.type as ascode,c.description as asdesc,b.amount,a.typecode,f.accdesc  "+
+															"   FROM fund_type f,link_fmis.billingtypes c, assess a,  "+
+															"   (SELECT c.studid,c.acadyear,c.semester,c.type,sum(c.amount) as amount  "+
+															"    FROM link_fmis.billingaccounts c  "+
+															"    WHERE c.studid=$1 and c.acadyear=$2 and c.semester=$3  "+
+															"    GROUP BY c.studid,c.acadyear,c.semester,c.type) as b  "+
+															"   WHERE f.typecode=a.typecode AND a.ascode=b.type AND b.type=c.code  "+
+															"   ORDER BY TypeCode, AsDesc) AS a  "+
+															"  WHERE ascode IN (1,360,416,417,418,419,421,422,423,2,411,412,413,414,415) )AS b  "+
+															" GROUP BY studid,sy,sem,ascode,asdesc,typecode,accdesc  "+
+															" ORDER BY TypeCode, AsDesc";
+									db.query(Query,[studid,sy,sem],(err,table) =>{
+										if(err){
+											console.log(err);
+										}else{
+											var Query = "SELECT sum(amount)::::numeric(10,2) as totalamount FROM ( "+
+																	" SELECT b.studid,b.acadyear as sy,b.semester as sem,b.type as ascode,c.description as asdesc,b.amount,a.typecode,f.accdesc "+
+																	" FROM fund_type f,link_fmis.billingtypes c, assess a, "+
+																	"  (SELECT c.studid,c.acadyear,c.semester,c.type,sum(c.amount) as amount "+
+																	"  FROM link_fmis.billingaccounts c "+
+																	"  WHERE c.studid=$1 and c.acadyear=$2 and c.semester=$3 "+
+																	"  GROUP BY c.studid,c.acadyear,c.semester,c.type) as b "+
+																	" WHERE f.typecode=a.typecode AND a.ascode=b.type AND b.type=c.code "+
+																	" ) as qry";
+											db.query(Query,[studid,sy,sem],(err,table) =>{
+												if(err){
+													console.log(err);
+												}else{
+														if(table.rows.length > 0){
+															let totalpayable = parseInt(table.rows[0].totalamount);
+														}
+												}
+											})
+										}
+									})
 								}
 
 							}
