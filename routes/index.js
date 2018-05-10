@@ -2591,7 +2591,7 @@ router.post('/getGPA',function(request,response){
 //*** END General Percentage Average **//
 
 //**** Printing of COR **//
-router.post('/printCOR',function(request,response){
+router.post('/tuitionCompute',function(request,response){
 	var progcode = request.body.progcode;
 	var sy = request.body.sy;
 	var sem = request.body.sem;
@@ -2697,15 +2697,20 @@ router.post('/printCOR',function(request,response){
 												if(err){
 													console.log(err);
 												}else{
+														let totalpayable=0;
 														if(table.rows.length > 0){
-															let totalpayable = parseInt(table.rows[0].totalamount);
+															 totalpayable = parseInt(table.rows[0].totalamount);
+														}else{
+															 totalpayable = 0;
 														}
+														//Skedfees
+														db.end();
+														response.send(table.rows[0].totalamount);
 												}
 											})
 										}
 									})
 								}
-
 							}
 						})
 				}
@@ -2714,6 +2719,114 @@ router.post('/printCOR',function(request,response){
 	})
 });
 //*** END of printing COR **//
+
+//*** Skedfees(Printong COR provided to have an OR#) ***//
+router.post('/skedfees',function(request,response){
+	var studid = request.body.studid;
+	var sy = request.body.sy;
+	var sem = request.body.sem;
+	var totalpayable = request.body.totalpayable;
+
+	pool.connect((err,db,done) =>{
+		if(err){
+			console.log(err);
+		}
+		else{
+			var Query = "SELECT sysemno from sysem where sy=$1 and sem=$2";
+			db.query(Query,[sy,sem],(err,table) =>{
+				if(err){
+					console.log(err);
+				}else{
+					let sysemno = table.rows[0].sysemno;
+
+					if(sysemno < 33){
+							var Query = "SELECT pays.amount FROM pays,receipt "+
+											    " WHERE receipt.ornumber=pays.ornumber and receipt.student=true  "+
+											    " and sy=$1 and sem=$2 and idno=$3 and pays.ascode=18";
+							db.query(Query,[sy,sem,studid],(err,table) =>{
+								if(err){
+									console.log(err);
+								}else{
+									let entrance = 0;
+									if(table.rows.length > 0){
+										entrance = table.rows[0].amount
+									}
+									let totalpayable33 = parseInt(totalpayable) * 0.5;
+									if(parseInt(totalpayable) <= 1500){
+										entrance = parseInt(totalpayable);
+										let prelim = 0;
+									}else if(totalpayable33 > 1500){
+										entrance = totalpayable33;
+										let prelim = (parseInt(totalpayable) - entrance);
+									}else{
+										entrance = (parseInt(totalpayable)/2);
+										let prelim = (parseInt(totalpayable) - entrance);
+
+									}
+
+									var Query = "SELECT 1 as rank,''Initial Fee'' as sked,$1::float as amount "+
+    													" UNION SELECT 2 as rank,''Prelim/Midterm Fee'' as sked,$2::float as amount ORDER BY rank";
+									db.query(Query,[entrance,prelim],(err,table) =>{
+										if(err){
+											console.log(err);
+										}else{
+												db.end();
+												response.send(table.rows);
+										}
+									})
+								}
+							})
+					}else{
+						if( sysemno < 36){					//before 2011-2012 2nd semester
+							var Query = "SELECT sum(pays.amount)::numeric(10,2) as amount, receipt.ornumber, receipt.date FROM pays,receipt, "+
+											    " (SELECT receipt.* FROM pays,receipt, ($2) as lst WHERE receipt.ornumber=pays.ornumber and "+
+											    " receipt.student=true and lst.ascode=pays.ascode and receipt.sy=$2 and receipt.sem=$3 and receipt.idno=$1 ORDER BY date LIMIT 1 "+
+											    " ) as ornum WHERE receipt.ornumber=pays.ornumber and receipt.student=true and receipt.sy=ornum.sy "+
+											    "  and receipt.sem=ornum.sem and receipt.idno=ornum.idno and receipt.ornumber=ornum.ornumber "+
+											    "  GROUP BY receipt.date, receipt.ornumber "+
+											    " ORDER BY receipt.date";
+							db.query(Query,[studid,sy,sem],(err,table) =>{
+								if(err){
+									console.log(err);
+								}else{
+										db.end();
+										response.send(table.rows);
+								}
+							})
+						}else{		//after 2011-2012 1st
+							var Query = "SELECT sum(p.amount)::numeric(10,2) as amount, r.refrcpt, r.receiptdate FROM link_fmis.collectionitems p,link_fmis.collections r, link_fmis.billingaccounts b, "+
+											    " (SELECT r.*, b.acadyear, b.semester FROM link_fmis.collectionitems p,link_fmis.collections r, link_fmis.billingaccounts b, ( $2) as lst WHERE r.receiptnum=p.receiptnum AND p.refcode=b.code "+
+											    " AND b.acadyear=$2 and b.semester=$3 and R.refidno=$1 ORDER BY R.receiptDATE LIMIT 1 "+
+											    " ) as ornum WHERE r.receiptnum=p.receiptnum AND p.refcode=b.code and b.acadyear=ornum.acadyear "+
+											    "  and b.semester=ornum.semester and R.refidno=ornum.refidno and r.refrcpt=ornum.refrcpt "+
+											    " GROUP BY r.receiptdate, r.refrcpt  "+
+											    " ORDER BY r.receiptdate";
+							db.query(Query,[studid,sy,sem],(err,table) =>{
+								if(err){
+									console.log(err);
+								}else{
+										let entrance = parseFloat(table.rows[0].amount)
+								}
+							})
+						}
+					}
+
+					// var Query = "SELECT feescheme($1,$2) as sql";
+					// db.query(Query,[entrance,totalpayable],(err,table) =>{
+					// 	if(err){
+					// 		console.log(err);
+					// 	}else{
+					//
+					// 	}
+					// })
+				}//
+			})
+		}
+	})
+});
+//*** END of Skedfees
+
+
 
 //***************************
 //* End of Enrolment Module *
