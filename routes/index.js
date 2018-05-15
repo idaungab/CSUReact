@@ -1233,6 +1233,60 @@ router.post('/getCategoryProgram',function(request,response){
 		})
 	})
 	// **** End of Checking if user has access to subject entry ****//
+
+	// **** Start of getting class list ****//
+	router.post('/getClassList',function(request,response){
+		var sy = request.body.sy;
+		var sem = request.body.sem;
+		var scode = request.body.scode;
+		var section = request.body.section;
+		pool.connect((err,db,done)=>{
+			if(err){
+				console.log(err)
+			}
+			else{
+				var Query = " SELECT DISTINCT student.studid,(initcap(Student.LastName||', '||student.firstname||' '||' '||substring(student.middlename from 1 for 1)||'.'))::varchar as student,semstudent.studmajor,program.progdesc,semstudent.sy,semstudent.sem, "+
+                " subject.courseno,registration.section, "+
+								" CASE "+
+								"	WHEN semstudent.studlevel=1 THEN '1st' "+
+								"	WHEN semstudent.studlevel=2 THEN '2nd' "+
+								"	WHEN semstudent.studlevel=3 THEN '3rd' "+
+								"	WHEN semstudent.studlevel=4 THEN '4th' "+
+								"	WHEN semstudent.studlevel=5 THEN '5th' "+
+								"	ELSE 'Undefined' "+
+								"	END AS studlevel "+
+								" FROM student,semstudent,program,subject,offeredsubject,registration,schedule,employee "+
+								" WHERE student.studid=semstudent.studid AND semstudent.studmajor=program.progcode "+
+								                " and semstudent.sy=registration.sy "+
+								                " and semstudent.sem=registration.sem "+
+								                " and semstudent.studid=registration.studid "+
+								                " and subject.subjcode=offeredSubject.subjcode "+
+								       	" and offeredSubject.subjcode=registration.subjcode "+
+								                " and offeredsubject.subjcode=subject.subjcode "+
+								                " and offeredSubject.section=registration.section "+
+								      	" and offeredSubject.sy=registration.sy "+
+								      	" and offeredSubject.sem=registration.sem "+
+									" and schedule.subjcode=offeredsubject.subjcode "+
+									" and schedule.section=offeredsubject.section "+
+									" and schedule.sy=offeredsubject.sy "+
+									" and schedule.sem=offeredsubject.sem "+
+								                " and employee.empid=schedule.empid "+
+									" AND semstudent.sy=$1 AND semstudent.sem=$2 AND subject.subjcode=$3 AND offeredsubject.section=$4 "+
+								" ORDER BY student ";
+				db.query(Query,[sy,sem,scode,section],(err,table) =>{
+					if(err){
+						console.log(err)
+					}
+					else{
+						db.end();
+						response.send(table.rows)
+					}
+				})
+			}
+		})
+	})
+	// **** End of getting class list ****//
+
 //***************************
 //END Scheduling Module *****
 //***************************
@@ -1978,7 +2032,7 @@ router.post('/InsertUpdateEnrollStudent', function(request, response) {
 //****END of Enrolling student, insert/update semstudent ***//
 
 //**** Register component ***//
-router.post('/zqryreg', function(request, response) {
+router.post('/registration', function(request, response) {
 	var studid = request.body.studid;
 	var sy = request.body.sy;
 	var sem = request.body.sem;
@@ -2009,9 +2063,6 @@ router.post('/zqryreg', function(request, response) {
 });
 //**** End of register component ***//
 
-//**** Offered ***//
-
-//*** END of Offered ***//
 
 //**Get subject details**//
 router.get('/getCourses', function(req, res) {
@@ -2726,7 +2777,9 @@ router.post('/skedfees',function(request,response){
 	var sy = request.body.sy;
 	var sem = request.body.sem;
 	var totalpayable = request.body.totalpayable;
+	var username = request.body.username;
 
+	let result = [];
 	pool.connect((err,db,done) =>{
 		if(err){
 			console.log(err);
@@ -2751,16 +2804,16 @@ router.post('/skedfees',function(request,response){
 									if(table.rows.length > 0){
 										entrance = table.rows[0].amount
 									}
-									let totalpayable33 = parseInt(totalpayable) * 0.5;
-									if(parseInt(totalpayable) <= 1500){
-										entrance = parseInt(totalpayable);
+									let totalpayable33 = parseFloat(totalpayable) * 0.5;
+									if(parseFloat(totalpayable) <= 1500){
+										entrance = parseFloat(totalpayable);
 										let prelim = 0;
 									}else if(totalpayable33 > 1500){
 										entrance = totalpayable33;
-										let prelim = (parseInt(totalpayable) - entrance);
+										let prelim = (parseFloat(totalpayable) - entrance);
 									}else{
-										entrance = (parseInt(totalpayable)/2);
-										let prelim = (parseInt(totalpayable) - entrance);
+										entrance = (parseFloat(totalpayable)/2);
+										let prelim = (parseFloat(totalpayable) - entrance);
 
 									}
 
@@ -2809,16 +2862,104 @@ router.post('/skedfees',function(request,response){
 								}
 							})
 						}
+						var Query = "SELECT feescheme($1,$2) as sql";
+						db.query(Query,[entrance,totalpayable],(err,table) =>{
+							if(err){
+								console.log(err);
+							}else{
+									let sql = table.rows[0].sql;
+									//Ln 1761-1767
+							}
+						})
 					}
-
-					// var Query = "SELECT feescheme($1,$2) as sql";
-					// db.query(Query,[entrance,totalpayable],(err,table) =>{
-					// 	if(err){
-					// 		console.log(err);
-					// 	}else{
-					//
-					// 	}
-					// })
+					var Query = " SELECT DISTINCT oid,sy,sem,studid,subjcode::varchar as subjcode,section::varchar as section,days,skedtime,room,bldg,description,lec,lab,unit,(CASE WHEN ((subjcode like 'NSTP%') OR (subjcode like 'MS %')  OR (subjcode like 'MTS %')) THEN '('||credit::varchar||')' ELSE credit::varchar END)::varchar as credit  FROM "+
+											" (SELECT DISTINCT registration.oid,registration.sy,registration.sem,registration.studid,(case when offeredSubject.is_requested then '*'||subject.courseno else subject.courseno end) as subjcode,registration.section,  "+
+											  	" schedule.days,(to_char(to_timestamp(schedule.fromtime::text,'HH24:MI'),'HH12:MI AM')||'-'||to_char(to_timestamp(schedule.totime::text,'HH24:MI'),'HH12:MI AM'))::varchar as skedtime,schedule.room,schedule.bldg, "+
+											        	" subject.description::varchar as description,subject.lec::varchar as lec,subject.lab::varchar as lab,subject.lec::varchar as unit,subject.unit::varchar as credit "+
+											      " FROM registration,offeredSubject,subject,schedule              "+
+											      " WHERE subject.subjcode=offeredSubject.subjcode        "+
+											      " 	and offeredSubject.subjcode=registration.subjcode "+
+											      "   and offeredsubject.subjcode=subject.subjcode        "+
+											      "   and offeredSubject.section=registration.section   "+
+											      " 	and offeredSubject.sy=registration.sy     "+
+											      " 	and offeredSubject.sem=registration.sem  "+
+												" and schedule.subjcode=offeredsubject.subjcode  "+
+												" and schedule.section=offeredsubject.section "+
+											         "        and schedule.is_visible=true "+
+												" and schedule.sy=offeredsubject.sy   "+
+												" and schedule.sem=offeredsubject.sem "+
+											      	" and registration.studid=$1 "+
+											      	" and registration.sy=$2  "+
+											     	" and registration.sem=$3  "+
+											 " UNION "+
+											 " SELECT DISTINCT registration.oid,registration.sy,registration.sem,registration.studid,''::varchar as subjcode,''::varchar as section,  "+
+											  " schedule.days,(to_char(to_timestamp(schedule.fromtime::text,'HH24:MI'),'HH12:MI AM')||'-'||to_char(to_timestamp(schedule.totime::text,'HH24:MI'),'HH12:MI AM'))::varchar as skedtime,schedule.room,schedule.bldg,  "+
+											  " ''::varchar as description,''::varchar as lec,''::varchar as lab ,''::varchar as unit,''::varchar as credit  "+
+											  " FROM registration,offeredSubject,subject,schedule               "+
+											  " WHERE subject.subjcode=offeredSubject.subjcode        "+
+											  " and offeredSubject.subjcode=registration.subjcode   "+
+											  " and offeredsubject.subjcode=subject.subjcode        "+
+											  " and offeredSubject.section=registration.section   "+
+											  " and offeredSubject.sy=registration.sy     "+
+											  " and offeredSubject.sem=registration.sem  "+
+												" and schedule.subjcode=offeredsubject.subjcode "+
+												" and schedule.section=offeredsubject.section "+
+											  " and schedule.is_visible=FALSE "+
+												" and schedule.sy=offeredsubject.sy   "+
+												" and schedule.sem=offeredsubject.sem "+
+											  " and registration.studid=$1 "+
+											  " and registration.sy=$2  "+
+											  " and registration.sem=$3 ) as qry "+
+											  " ORDER by oid, subjcode desc " ;
+					db.query(Query,[studid,sy,sem],(err,table) =>{
+						if(err){
+							console.log(err);
+						}else{
+							result = table.rows;
+							var Query = "SELECT DISTINCT registration.oid,registration.sy,registration.sem,registration.studid,(case when offeredSubject.is_requested then '*'||subject.courseno else subject.courseno end) as subjcode,registration.section, "+
+								        	" subject.description,subject.lec::varchar,subject.lab::varchar,subject.lec::varchar as unit,(CASE WHEN ((subject.subjcode like 'NSTP%') OR (subject.subjcode like 'MS %')  OR (subject.subjcode like 'MTS %')) THEN '('||unit::varchar||')' ELSE unit::varchar END)::varchar as credit    "+
+										      " FROM registration,offeredSubject,subject,schedule "+
+										      " WHERE subject.subjcode=offeredSubject.subjcode "+
+									      	" and offeredSubject.subjcode=registration.subjcode "+
+									        " and offeredsubject.subjcode=subject.subjcode "+
+									        " and offeredSubject.section=registration.section "+
+									      	" and offeredSubject.sy=registration.sy    "+
+									      	" and offeredSubject.sem=registration.sem "+
+													" and schedule.subjcode=offeredsubject.subjcode "+
+													" and schedule.section=offeredsubject.section "+
+													" and schedule.sy=offeredsubject.sy  "+
+													" and schedule.sem=offeredsubject.sem  "+
+									      	" and registration.studid=$1 "+
+									      	" and registration.sy=$2 "+
+								     			" and registration.sem=$3 "+
+												 	" order by oid, subjcode";
+							db.query(Query,[studid,sy,sem],(err,table) =>{
+								if(err){
+									console.log(err);
+								}else{
+									result.push(table.rows);
+									var Query = "SELECT distinct student.*,semstudent.*,studinfo.sex::varchar,scholar.scholar, qry.emp as emp,current_date as today, (substring(middlename,1,1)||'.')::varchar as mi "+
+															" FROM student,semstudent,studinfo,scholar, "+
+															" (select (firstname||' '||lastname)::varchar as emp from employee,encoder where encoder.empid=employee.empid AND encoder.username=$4) as qry  "+
+															" WHERE student.studid=semstudent.studid "+
+															" AND student.studid=studinfo.studid "+
+															" AND scholar.scholarcode=semstudent.scholarcode   "+
+															" AND semstudent.studid=$1 "+
+															" AND semstudent.sy=$2 "+
+															" AND semstudent.sem=$3 ";
+									db.query(Query,[studid,sy,sem,username],(err,table) =>{
+										if(err){
+											console.log(err);
+										}else{
+												result.push(table.rows);
+												db.end();
+												response.send(result);
+										}
+									})
+								}
+							})
+						}
+					})
 				}//
 			})
 		}
@@ -2826,7 +2967,254 @@ router.post('/skedfees',function(request,response){
 });
 //*** END of Skedfees
 
+/****Printing Statement of Account and COR ***/
+router.post('/CORandSOA',function(request,response){
+	var studid = request.body.studid;
+	var sy = request.body.sy;
+	var sem = request.body.sem;
+	var or = request.body.or;
+	var current_user = request.body.current;
+	var current_date = request.body.current_date;
 
+	pool.connect((err,db,done) =>{
+		if(err){
+			console.log(err);
+		}
+		else{
+			//check if Student ORNo exist for the sy, sem in PAYS table and all in COLLECTIONS table (disregard sy,sem)
+			var Query = " SELECT r.idno, p.ornumber, sum(p.amount)::NUMERIC(10,2) as amount, r.sy, r.sem "+
+									" FROM receipt r, pays p WHERE r.ornumber=p.ornumber AND idno=$1 AND sy=$2 AND sem=$3 AND p.ornumber=$4 GROUP BY r.idno, p.ornumber, r.sy, r.sem  "+
+									" UNION  "+
+									" SELECT r.refidno, r.refrcpt::VARCHAR, sum(p.amount)::NUMERIC(10,2) as amount, b.acadyear as sy, b.semester as sem  "+
+									" FROM link_fmis.collections r, link_fmis.collectionitems p, link_fmis.billingaccounts b "+
+									" WHERE r.receiptnum=p.receiptnum AND p.refcode=b.code AND r.refidno=$1 AND b.acadyear=$2 AND b.semester=$3 AND r.refrcpt::varchar=$4 GROUP BY r.refidno, r.refrcpt, b.acadyear, b.semester ";
+			db.query(Query,[studid,sy,sem,or],(err,table) =>{
+				if(err){
+					console.log(err);
+				}else{
+					if(table.rows.length > 0){
+						//new process effective 2016-2017 1st c/o registrar: validate if proceed printing
+									var Query = " SELECT studid FROM validation WHERE studid=$1 AND sy=$2 AND sem=$3 UNION "+
+															" SELECT 'OverRide' WHERE '2012-20131st' > $2$3 ";
+									db.query(Query,[studid,sy,sem],(err,table) =>{
+										if(err){
+											console.log(err);
+										}else{
+											if(table.rows.length === 0){  //not yet validated
+												var Query = " INSERT INTO validation(studid, sy, sem, username, date_validated, validatedby) "+
+																		" VALUES($1,$2,$3,$4,$5,$4) ";
+												db.query(Query,[studid,sy,sem,current_user,current_date],(err,table) =>{
+													if(err){
+														console.log(err);
+													}else{
+														var Query = " UPDATE registration SET datevalidated=$4 "+
+																				" WHERE studid=$1 AND sy=$2 AND sem=$3";
+														db.query(Query,[studid,sy,sem,current_date],(err,table) =>{
+															if(err){
+																console.log(err);
+															}else{
+
+															}
+														})
+													}
+												})
+											}else{
+												var Query = " UPDATE registration SET datevalidated=$4 "+
+																		" WHERE studid=$1 AND sy=$2 AND sem=$3 AND datevalidated ISNULL";
+												db.query(Query,[studid,sy,sem,current_date],(err,table) =>{
+													if(err){
+														console.log(err);
+													}else{
+
+													}
+												})
+											}
+
+											//Total assessment
+											var Query = " SELECT studid,sy,sem,sum(amount)::NUMERIC(10,2) as amount from "+
+																	" (SELECT * FROM sql_assess($1, $2, $3)) as a group by studid,sy,sem ";
+											db.query(Query,[studid,sy,sem],(err,table) =>{
+												if(err){
+													console.log(err);
+												}else{
+													var Query = " SELECT R.IDNO, R.SY, R.SEM, R.DATE, SUM(P.AMOUNT)::::NUMERIC(10,2) AS AMOUNT, R.ORNUMBER "+
+																			" FROM RECEIPT R, PAYS P WHERE R.ORNUMBER=P.ORNUMBER AND R.IDNO=$1 "+
+																			" AND R.SY=$2 AND R.SEM=$3 "+
+																			" GROUP BY R.IDNO, R.SY, R.SEM, R.DATE, R.ORNUMBER UNION "+
+																			" SELECT STUDID AS IDNO, SY, SEM, MDATE AS DATE, SUM(AMOUNT)::NUMERIC(10,2) AS AMOUNT, REMARKS AS ORNUMBER "+
+																			" FROM DEBITMEMO WHERE STUDID=$1 "+
+																			" AND SY=$2 AND SEM=$3 "+
+																			" GROUP BY STUDID, SY, SEM, MDATE, REMARKS UNION "+
+																			" SELECT r.refidno, b.acadyear as sy, b.semester as sem, R.receiptDATE as date, SUM(P.AMOUNT)::NUMERIC(10,2) AS AMOUNT, r.refrcpt::varchar "+
+																			" FROM link_fmis.collections r, link_fmis.collectionitems p, link_fmis.billingaccounts b "+
+																			" WHERE r.receiptnum=p.receiptnum AND p.refcode=b.code AND R.refidno=$1 "+
+																			"  AND b.acadyear=$2 AND b.semester=$3 "+
+																			" GROUP BY R.refidno, b.acadyear, b.semester, R.receiptDATE, R.refrcpt "+
+																			" ORDER BY DATE DESC";
+														db.query(Query,[studid,sy,sem],(err,table) =>{
+															if(err){
+																console.log(err);
+															}else{
+																var Query = " SELECT v.*, upper('ENROLMENT VALIDATED on: '||v.date_validated||'     by: '||m.firstname ||' '|| CASE WHEN length(substring(m.middlename,1,1))=1 THEN substring(m.middlename,1,1)||'.' ELSE '' END ||' '|| m.lastname) ::varchar AS remark "+
+																						"	FROM validation v, encoder e, employee m "+
+																						"	WHERE v.username=e.username AND e.empid=m.empid AND v.studid=$1 AND sy=$2 AND sem=$3 "+
+																						" ORDER BY DATE DESC";
+																	db.query(Query,[studid,sy,sem],(err,table) =>{
+																		if(err){
+																			console.log(err);
+																		}else{
+
+																		}
+																	})
+															}
+														})
+												}
+											})
+										}
+									})
+					}else{ // no OR check if student is scholar
+						var Query = " SELECT ss.studid, s.schoolfunded, s.scholar FROM semstudent ss, scholar s "+
+												" WHERE ss.scholarcode=s.scholarcode AND NOT upper(s.scholar)=upper('paying') AND sy=$2 "+
+												" AND sem=$3 AND studid=$1";
+							db.query(Query,[studid,sy,sem],(err,table) =>{
+								if(err){
+									console.log(err);
+								}else{
+										if(table.rows.length > 0){	//check if scholar
+											// new process effective 2016-2017 1st c/o registrar: validate if proceed printing
+											var Query = "SELECT studid FROM validation WHERE studid=$1 AND sy=$2 AND sem=$3 UNION "+
+																	" SELECT 'OverRide' WHERE '2012-20131st'> $2$3 ";
+												db.query(Query,[studid,sy,sem],(err,table) =>{
+													if(err){
+														console.log(err);
+													}else{
+														if(table.rows.length === 0){  //not yet validated
+															var Query = " INSERT INTO validation(studid, sy, sem, username, date_validated, validatedby) "+
+																					" VALUES($1,$2,$3,$4,$5,$4) ";
+															db.query(Query,[studid,sy,sem,current_user,current_date],(err,table) =>{
+																if(err){
+																	console.log(err);
+																}else{
+																	var Query = " UPDATE registration SET datevalidated=$4 "+
+																							" WHERE studid=$1 AND sy=$2 AND sem=$3";
+																	db.query(Query,[studid,sy,sem,current_date],(err,table) =>{
+																		if(err){
+																			console.log(err);
+																		}else{
+
+																		}
+																	})
+																}
+															})
+														}else{
+															var Query = " UPDATE registration SET datevalidated=$4 "+
+																					" WHERE studid=$1 AND sy=$2 AND sem=$3 AND datevalidated ISNULL";
+															db.query(Query,[studid,sy,sem,current_date],(err,table) =>{
+																if(err){
+																	console.log(err);
+																}else{
+
+																}
+															})
+														}
+													}
+												})
+												//total assessment
+												var Query = " SELECT studid,sy,sem,sum(amount)::NUMERIC(10,2) as amount from "+
+																		" (SELECT * FROM sql_assess($1, $2, $3)) as a group by studid,sy,sem ";
+												db.query(Query,[studid,sy,sem],(err,table) =>{
+													if(err){
+														console.log(err);
+													}else{
+														var Query = " SELECT R.IDNO, R.SY, R.SEM, R.DATE, SUM(P.AMOUNT)::::NUMERIC(10,2) AS AMOUNT, R.ORNUMBER "+
+																				" FROM RECEIPT R, PAYS P WHERE R.ORNUMBER=P.ORNUMBER AND R.IDNO=$1 "+
+																				" AND R.SY=$2 AND R.SEM=$3 "+
+																				" GROUP BY R.IDNO, R.SY, R.SEM, R.DATE, R.ORNUMBER UNION "+
+																				" SELECT STUDID AS IDNO, SY, SEM, MDATE AS DATE, SUM(AMOUNT)::NUMERIC(10,2) AS AMOUNT, REMARKS AS ORNUMBER "+
+																				" FROM DEBITMEMO WHERE STUDID=$1 "+
+																				" AND SY=$2 AND SEM=$3 "+
+																				" GROUP BY STUDID, SY, SEM, MDATE, REMARKS UNION "+
+																				" SELECT r.refidno, b.acadyear as sy, b.semester as sem, R.receiptDATE as date, SUM(P.AMOUNT)::NUMERIC(10,2) AS AMOUNT, r.refrcpt::varchar "+
+																				" FROM link_fmis.collections r, link_fmis.collectionitems p, link_fmis.billingaccounts b "+
+																				" WHERE r.receiptnum=p.receiptnum AND p.refcode=b.code AND R.refidno=$1 "+
+																				"  AND b.acadyear=$2 AND b.semester=$3 "+
+																				" GROUP BY R.refidno, b.acadyear, b.semester, R.receiptDATE, R.refrcpt "+
+																				" ORDER BY DATE DESC";
+															db.query(Query,[studid,sy,sem],(err,table) =>{
+																if(err){
+																	console.log(err);
+																}else{
+																	var Query = " SELECT v.*, upper('ENROLMENT VALIDATED on: '||v.date_validated||'     by: '||m.firstname ||' '|| CASE WHEN length(substring(m.middlename,1,1))=1 THEN substring(m.middlename,1,1)||'.' ELSE '' END ||' '|| m.lastname) ::varchar AS remark "+
+																							"	FROM validation v, encoder e, employee m "+
+																							"	WHERE v.username=e.username AND e.empid=m.empid AND v.studid=$1 AND sy=$2 AND sem=$3 "+
+																							" ORDER BY DATE DESC";
+																		db.query(Query,[studid,sy,sem],(err,table) =>{
+																			if(err){
+																				console.log(err);
+																			}else{
+
+																			}
+																		})
+																}
+															})
+													}
+												})
+										}
+								}
+							})
+					}//*** END of Old rules
+				}
+			})
+		}
+	})
+});
+/**** END of printing Statement of Account and COR ***/
+
+/****** Printing Statement of Account only ****/
+router.post('/SOA',function(request,response){
+	var progcode = request.body.progcode;
+	var sy = request.body.sy;
+	var sem = request.body.sem;
+
+	pool.connect((err,db,done) =>{
+		if(err){
+			console.log(err);
+		}
+		else{
+			var Query = " SELECT studid,sy,sem,sum(amount)::NUMERIC(10,2) as amount from "+
+									" (SELECT * FROM sql_assess($1, $2, $3)) as a group by studid,sy,sem ";
+			db.query(Query,[studid,sy,sem],(err,table) =>{
+				if(err){
+					console.log(err);
+				}else{
+					var Query = " SELECT R.IDNO, R.SY, R.SEM, R.DATE, SUM(P.AMOUNT)::::NUMERIC(10,2) AS AMOUNT, R.ORNUMBER "+
+											" FROM RECEIPT R, PAYS P WHERE R.ORNUMBER=P.ORNUMBER AND R.IDNO=$1 "+
+											" AND R.SY=$2 AND R.SEM=$3 "+
+											" GROUP BY R.IDNO, R.SY, R.SEM, R.DATE, R.ORNUMBER UNION "+
+											" SELECT STUDID AS IDNO, SY, SEM, MDATE AS DATE, SUM(AMOUNT)::NUMERIC(10,2) AS AMOUNT, REMARKS AS ORNUMBER "+
+											" FROM DEBITMEMO WHERE STUDID=$1 "+
+											" AND SY=$2 AND SEM=$3 "+
+											" GROUP BY STUDID, SY, SEM, MDATE, REMARKS UNION "+
+											" SELECT r.refidno, b.acadyear as sy, b.semester as sem, R.receiptDATE as date, SUM(P.AMOUNT)::NUMERIC(10,2) AS AMOUNT, r.refrcpt::varchar "+
+											" FROM link_fmis.collections r, link_fmis.collectionitems p, link_fmis.billingaccounts b "+
+											" WHERE r.receiptnum=p.receiptnum AND p.refcode=b.code AND R.refidno=$1 "+
+											"  AND b.acadyear=$2 AND b.semester=$3 "+
+											" GROUP BY R.refidno, b.acadyear, b.semester, R.receiptDATE, R.refrcpt "+
+											" ORDER BY DATE DESC";
+						db.query(Query,[studid,sy,sem],(err,table) =>{
+							if(err){
+								console.log(err);
+							}else{
+								db.end();
+								response.send(table.rows);
+							}
+						})
+				}
+			})
+		}
+	})
+});
+/****** END Printing Statement of Account only ****/
 
 //***************************
 //* End of Enrolment Module *
