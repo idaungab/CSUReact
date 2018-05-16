@@ -2646,8 +2646,8 @@ router.post('/tuitionCompute',function(request,response){
 	var progcode = request.body.progcode;
 	var sy = request.body.sy;
 	var sem = request.body.sem;
-	var progcode = request.body.progcode;
-
+	var studid = request.body.studid;
+console.log(sy);
 	pool.connect((err,db,done) =>{
 		if(err){
 			console.log(err);
@@ -2659,6 +2659,7 @@ router.post('/tuitionCompute',function(request,response){
 				if(err){
 					console.log(err);
 				}else{
+						console.log(sy);
 						let sysemno = table.rows[0].sysemno;
 						var Query = "SELECT * FROM program WHERE progcode=$1";
 
@@ -2717,8 +2718,8 @@ router.post('/tuitionCompute',function(request,response){
 															" WHERE ascode NOT IN (1,360,416,417,418,419,421,422,423,2,411,412,413,414,415)  "+
 															" UNION  "+
 															" SELECT studid,sy,sem,ascode,asdesc,sum(amount) as amount,typecode,accdesc FROM  "+
-															" (SELECT studid,sy,sem,(case when ascode in (1,360,416,417,418,419,421,422,423) the1n 1 when ascode in (2,411,412,413,414,415) then 2 else ascode end) as ascode  "+
-															"  ,(case when ascode in (1,360,416,417,418,419,421,422,423) then ''Tuition'' when ascode in (2,411,412,413,414,415) then ''Laboratory'' else asdesc end) as asdesc,amount,typecode,accdesc  "+
+															" (SELECT studid,sy,sem,(case when ascode in (1,360,416,417,418,419,421,422,423) then 1 when ascode in (2,411,412,413,414,415) then 2 else ascode end) as ascode  "+
+															"  ,(case when ascode in (1,360,416,417,418,419,421,422,423) then 'Tuition' when ascode in (2,411,412,413,414,415) then 'Laboratory' else asdesc end) as asdesc,amount,typecode,accdesc  "+
 															"  FROM  "+
 															"  (SELECT b.studid,b.acadyear as sy,b.semester as sem,b.type as ascode,c.description as asdesc,b.amount,a.typecode,f.accdesc  "+
 															"   FROM fund_type f,link_fmis.billingtypes c, assess a,  "+
@@ -2735,7 +2736,7 @@ router.post('/tuitionCompute',function(request,response){
 										if(err){
 											console.log(err);
 										}else{
-											var Query = "SELECT sum(amount)::::numeric(10,2) as totalamount FROM ( "+
+											var Query = "SELECT sum(amount)::numeric(10,2) as totalamount FROM ( "+
 																	" SELECT b.studid,b.acadyear as sy,b.semester as sem,b.type as ascode,c.description as asdesc,b.amount,a.typecode,f.accdesc "+
 																	" FROM fund_type f,link_fmis.billingtypes c, assess a, "+
 																	"  (SELECT c.studid,c.acadyear,c.semester,c.type,sum(c.amount) as amount "+
@@ -2780,6 +2781,8 @@ router.post('/skedfees',function(request,response){
 	var username = request.body.username;
 
 	let result = [];
+	let entrance = 0;
+	let prelim =0;
 	pool.connect((err,db,done) =>{
 		if(err){
 			console.log(err);
@@ -2800,25 +2803,24 @@ router.post('/skedfees',function(request,response){
 								if(err){
 									console.log(err);
 								}else{
-									let entrance = 0;
 									if(table.rows.length > 0){
 										entrance = table.rows[0].amount
 									}
 									let totalpayable33 = parseFloat(totalpayable) * 0.5;
 									if(parseFloat(totalpayable) <= 1500){
 										entrance = parseFloat(totalpayable);
-										let prelim = 0;
+										prelim = 0;
 									}else if(totalpayable33 > 1500){
 										entrance = totalpayable33;
-										let prelim = (parseFloat(totalpayable) - entrance);
+										prelim = (parseFloat(totalpayable) - entrance);
 									}else{
 										entrance = (parseFloat(totalpayable)/2);
-										let prelim = (parseFloat(totalpayable) - entrance);
+										prelim = (parseFloat(totalpayable) - entrance);
 
 									}
 
-									var Query = "SELECT 1 as rank,''Initial Fee'' as sked,$1::float as amount "+
-    													" UNION SELECT 2 as rank,''Prelim/Midterm Fee'' as sked,$2::float as amount ORDER BY rank";
+									var Query = "SELECT 1 as rank,'Initial Fee' as sked,$1::float as amount "+
+    													" UNION SELECT 2 as rank,'Prelim/Midterm Fee' as sked,$2::float as amount ORDER BY rank";
 									db.query(Query,[entrance,prelim],(err,table) =>{
 										if(err){
 											console.log(err);
@@ -2848,7 +2850,7 @@ router.post('/skedfees',function(request,response){
 							})
 						}else{		//after 2011-2012 1st
 							var Query = "SELECT sum(p.amount)::numeric(10,2) as amount, r.refrcpt, r.receiptdate FROM link_fmis.collectionitems p,link_fmis.collections r, link_fmis.billingaccounts b, "+
-											    " (SELECT r.*, b.acadyear, b.semester FROM link_fmis.collectionitems p,link_fmis.collections r, link_fmis.billingaccounts b, ( $2) as lst WHERE r.receiptnum=p.receiptnum AND p.refcode=b.code "+
+											    " (SELECT r.*, b.acadyear, b.semester FROM link_fmis.collectionitems p,link_fmis.collections r, link_fmis.billingaccounts b, ($2) as lst WHERE r.receiptnum=p.receiptnum AND p.refcode=b.code "+
 											    " AND b.acadyear=$2 and b.semester=$3 and R.refidno=$1 ORDER BY R.receiptDATE LIMIT 1 "+
 											    " ) as ornum WHERE r.receiptnum=p.receiptnum AND p.refcode=b.code and b.acadyear=ornum.acadyear "+
 											    "  and b.semester=ornum.semester and R.refidno=ornum.refidno and r.refrcpt=ornum.refrcpt "+
@@ -2858,7 +2860,7 @@ router.post('/skedfees',function(request,response){
 								if(err){
 									console.log(err);
 								}else{
-										let entrance = parseFloat(table.rows[0].amount)
+										entrance = parseFloat(table.rows[0].amount)
 								}
 							})
 						}
