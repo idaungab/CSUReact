@@ -1223,6 +1223,7 @@ router.post('/getCategoryProgram',function(request,response){
 				db.query(Query,[conflict,subjcode,stype,days,fromtime,totime,instructor,room,building,sy,sem,slot,is_requested,is_restricted,yearlevel,progcode,block,sdate,iscwts],(err,table) =>{
 					if(err){
 						console.log(err)
+						response.send(err)
 					}
 					else{
 						db.end();
@@ -1607,14 +1608,13 @@ router.post('/getMaxload',function(request,response){
 				if(err){
 					console.log(err);
 				}else{
-					var result =table.rows
+					var result =table.rows;
 					var Query1 = "SELECT cur_scholastic_status($1) as status";
 
 					db.query(Query1,[studid],(err,table) =>{
 						if(err){
 							console.log(err);
 						}else{
-							var status
 							result.push(table.rows);
 							console.log(result);
 							db.end();
@@ -2659,7 +2659,7 @@ console.log(sy);
 				if(err){
 					console.log(err);
 				}else{
-						console.log(sy);
+						console.log(progcode);
 						let sysemno = table.rows[0].sysemno;
 						var Query = "SELECT * FROM program WHERE progcode=$1";
 
@@ -2668,6 +2668,7 @@ console.log(sy);
 								console.log(err);
 							}else{
 								if(sysemno < 24){  //School year 2007-2008 1st sem and below
+									console.log("24");
 									var Query = "SELECT StudTuitionLab.StudID, StudTuitionLab.SY, StudTuitionLab.Sem, StudTuitionLab.AsCode, ASSESS.AsDesc, StudTuitionLab.Amount::NUMERIC(10,2) AS amount, FUND_TYPE.TypeCode, FUND_TYPE.AccDesc "+
 														"  FROM FUND_TYPE INNER JOIN (ASSESS INNER JOIN StudTuitionLab ON ASSESS.AsCode = StudTuitionLab.AsCode) ON FUND_TYPE.TypeCode = ASSESS.TypeCode  "+
 														"  WHERE (((StudTuitionLab.StudID)=$1) AND ((StudTuitionLab.SY)=$2) AND ((StudTuitionLab.Sem)=$3))  "+
@@ -2677,6 +2678,7 @@ console.log(sy);
 										if(err){
 											console.log(err);
 										}else{
+													let result = table.rows;
 													var Query = "SELECT sum(StudTuitionLab.Amount)::::NUMERIC(10,2) as  totalamount  "+
 																			"  FROM FUND_TYPE INNER JOIN (ASSESS INNER JOIN StudTuitionLab ON ASSESS.AsCode = StudTuitionLab.AsCode) ON FUND_TYPE.TypeCode = ASSESS.TypeCode "+
 																			"  WHERE (((StudTuitionLab.StudID)=:studid) AND ((StudTuitionLab.SY)=:sy) AND ((StudTuitionLab.Sem)=:sem)) ";
@@ -2684,29 +2686,38 @@ console.log(sy);
 														if(err){
 															console.log(err);
 														}else{
-
+																result.push(table.rows);
+																console.log(table.rows);
+																db.end();
+																response.send(result);
 														}
 													})
 										}
 									})
-								}else if(sysemno < 36){				//*** Academic Year 2011-2012 1st sem and below
+								}else if(sysemno < 36){
+									console.log("36");			//*** Academic Year 2011-2012 1st sem and below
 									var Query = "SELECT * FROM sql_assess($1,$2,$3)";
 									db.query(Query,[studid,sy,sem],(err,table) =>{
 										if(err){
 											console.log(err);
 										}else{
+											let result = table.rows;
 											var Query = "SELECT sum(amount)::::NUMERIC(10,2) AS totalamount FROM "+
 																	" (SELECT * FROM sql_assess($1,$2,$3)) AS qry";
 											db.query(Query,[studid,sy,sem],(err,table) =>{
 												if(err){
 													console.log(err);
 												}else{
-
+														result.push(table.rows);
+														console.log(result);
+														db.end();
+														response.send(result);
 												}
 											})
 										}
 									})
 								}else{  		//*** Academic year 2011-2012 2nd sem and above, update due to new table in FARM
+									console.log("walay lain");
 									var Query = "SELECT * FROM "+
 															" (SELECT b.studid,b.acadyear as sy,b.semester as sem,b.type as ascode,c.description as asdesc,b.amount,a.typecode,f.accdesc "+
 															"  FROM fund_type f,link_fmis.billingtypes c, assess a,  "+
@@ -2756,6 +2767,7 @@ console.log(sy);
 															 totalpayable = 0;
 														}
 														//Skedfees
+														console.log(table.rows);
 														db.end();
 														response.send(table.rows[0].totalamount);
 												}
@@ -2977,6 +2989,7 @@ router.post('/CORandSOA',function(request,response){
 	var or = request.body.or;
 	var current_user = request.body.current;
 	var current_date = request.body.current_date;
+	var result = [];
 
 	pool.connect((err,db,done) =>{
 		if(err){
@@ -3015,7 +3028,8 @@ router.post('/CORandSOA',function(request,response){
 															if(err){
 																console.log(err);
 															}else{
-
+																	var r = table.rows;
+																	result.push({r,message:"Student is now validated! "});
 															}
 														})
 													}
@@ -3027,7 +3041,8 @@ router.post('/CORandSOA',function(request,response){
 													if(err){
 														console.log(err);
 													}else{
-
+														var r = table.rows;
+														result.push({r,message:"Student validation updated! "});
 													}
 												})
 											}
@@ -3039,6 +3054,7 @@ router.post('/CORandSOA',function(request,response){
 												if(err){
 													console.log(err);
 												}else{
+													result.push(table.rows);
 													var Query = " SELECT R.IDNO, R.SY, R.SEM, R.DATE, SUM(P.AMOUNT)::::NUMERIC(10,2) AS AMOUNT, R.ORNUMBER "+
 																			" FROM RECEIPT R, PAYS P WHERE R.ORNUMBER=P.ORNUMBER AND R.IDNO=$1 "+
 																			" AND R.SY=$2 AND R.SEM=$3 "+
@@ -3057,6 +3073,7 @@ router.post('/CORandSOA',function(request,response){
 															if(err){
 																console.log(err);
 															}else{
+																result.push(table.rows);
 																var Query = " SELECT v.*, upper('ENROLMENT VALIDATED on: '||v.date_validated||'     by: '||m.firstname ||' '|| CASE WHEN length(substring(m.middlename,1,1))=1 THEN substring(m.middlename,1,1)||'.' ELSE '' END ||' '|| m.lastname) ::varchar AS remark "+
 																						"	FROM validation v, encoder e, employee m "+
 																						"	WHERE v.username=e.username AND e.empid=m.empid AND v.studid=$1 AND sy=$2 AND sem=$3 "+
@@ -3065,7 +3082,8 @@ router.post('/CORandSOA',function(request,response){
 																		if(err){
 																			console.log(err);
 																		}else{
-
+																				db.end();
+																				response.send(result);
 																		}
 																	})
 															}
@@ -3103,7 +3121,8 @@ router.post('/CORandSOA',function(request,response){
 																		if(err){
 																			console.log(err);
 																		}else{
-
+																			var r = table.rows;
+																			result.push({r,message:"Student is now validated! "});
 																		}
 																	})
 																}
@@ -3115,7 +3134,8 @@ router.post('/CORandSOA',function(request,response){
 																if(err){
 																	console.log(err);
 																}else{
-
+																	var r = table.rows;
+																	result.push({r,message:"Student is now validated! "});
 																}
 															})
 														}
@@ -3128,6 +3148,7 @@ router.post('/CORandSOA',function(request,response){
 													if(err){
 														console.log(err);
 													}else{
+														result.push(table.rows);
 														var Query = " SELECT R.IDNO, R.SY, R.SEM, R.DATE, SUM(P.AMOUNT)::::NUMERIC(10,2) AS AMOUNT, R.ORNUMBER "+
 																				" FROM RECEIPT R, PAYS P WHERE R.ORNUMBER=P.ORNUMBER AND R.IDNO=$1 "+
 																				" AND R.SY=$2 AND R.SEM=$3 "+
@@ -3146,6 +3167,7 @@ router.post('/CORandSOA',function(request,response){
 																if(err){
 																	console.log(err);
 																}else{
+																	result.push(table.rows);
 																	var Query = " SELECT v.*, upper('ENROLMENT VALIDATED on: '||v.date_validated||'     by: '||m.firstname ||' '|| CASE WHEN length(substring(m.middlename,1,1))=1 THEN substring(m.middlename,1,1)||'.' ELSE '' END ||' '|| m.lastname) ::varchar AS remark "+
 																							"	FROM validation v, encoder e, employee m "+
 																							"	WHERE v.username=e.username AND e.empid=m.empid AND v.studid=$1 AND sy=$2 AND sem=$3 "+
@@ -3154,7 +3176,8 @@ router.post('/CORandSOA',function(request,response){
 																			if(err){
 																				console.log(err);
 																			}else{
-
+																					db.end();
+																					response.send(result);
 																			}
 																		})
 																}
@@ -3177,7 +3200,7 @@ router.post('/SOA',function(request,response){
 	var progcode = request.body.progcode;
 	var sy = request.body.sy;
 	var sem = request.body.sem;
-
+	let result = [];
 	pool.connect((err,db,done) =>{
 		if(err){
 			console.log(err);
@@ -3189,6 +3212,7 @@ router.post('/SOA',function(request,response){
 				if(err){
 					console.log(err);
 				}else{
+					result = table.rows;
 					var Query = " SELECT R.IDNO, R.SY, R.SEM, R.DATE, SUM(P.AMOUNT)::::NUMERIC(10,2) AS AMOUNT, R.ORNUMBER "+
 											" FROM RECEIPT R, PAYS P WHERE R.ORNUMBER=P.ORNUMBER AND R.IDNO=$1 "+
 											" AND R.SY=$2 AND R.SEM=$3 "+
@@ -3207,8 +3231,9 @@ router.post('/SOA',function(request,response){
 							if(err){
 								console.log(err);
 							}else{
+								result.push(table.rows);
 								db.end();
-								response.send(table.rows);
+								response.send(result);
 							}
 						})
 				}
