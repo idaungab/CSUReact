@@ -2679,9 +2679,9 @@ console.log(sy);
 											console.log(err);
 										}else{
 													let result = table.rows;
-													var Query = "SELECT sum(StudTuitionLab.Amount)::::NUMERIC(10,2) as  totalamount  "+
+													var Query = "SELECT sum(StudTuitionLab.Amount)::NUMERIC(10,2) as  totalamount  "+
 																			"  FROM FUND_TYPE INNER JOIN (ASSESS INNER JOIN StudTuitionLab ON ASSESS.AsCode = StudTuitionLab.AsCode) ON FUND_TYPE.TypeCode = ASSESS.TypeCode "+
-																			"  WHERE (((StudTuitionLab.StudID)=:studid) AND ((StudTuitionLab.SY)=:sy) AND ((StudTuitionLab.Sem)=:sem)) ";
+																			"  WHERE (((StudTuitionLab.StudID)=$1) AND ((StudTuitionLab.SY)=$2) AND ((StudTuitionLab.Sem)=$3)) ";
 													db.query(Query,[studid,sy,sem],(err,table) =>{
 														if(err){
 															console.log(err);
@@ -2702,7 +2702,7 @@ console.log(sy);
 											console.log(err);
 										}else{
 											let result = table.rows;
-											var Query = "SELECT sum(amount)::::NUMERIC(10,2) AS totalamount FROM "+
+											var Query = "SELECT sum(amount)::NUMERIC(10,2) AS totalamount FROM "+
 																	" (SELECT * FROM sql_assess($1,$2,$3)) AS qry";
 											db.query(Query,[studid,sy,sem],(err,table) =>{
 												if(err){
@@ -2991,6 +2991,7 @@ router.post('/CORandSOA',function(request,response){
 	var current_date = request.body.current_date;
 	var result = [];
 
+console.log(studid,sy,sem,or,current_user,current_date)
 	pool.connect((err,db,done) =>{
 		if(err){
 			console.log(err);
@@ -3008,6 +3009,7 @@ router.post('/CORandSOA',function(request,response){
 					console.log(err);
 				}else{
 					if(table.rows.length > 0){
+						console.log("naa or");
 						//new process effective 2016-2017 1st c/o registrar: validate if proceed printing
 									var Query = " SELECT studid FROM validation WHERE studid=$1 AND sy=$2 AND sem=$3 UNION "+
 															" SELECT 'OverRide' WHERE '2012-20131st' > $2$3 ";
@@ -3055,7 +3057,7 @@ router.post('/CORandSOA',function(request,response){
 													console.log(err);
 												}else{
 													result.push(table.rows);
-													var Query = " SELECT R.IDNO, R.SY, R.SEM, R.DATE, SUM(P.AMOUNT)::::NUMERIC(10,2) AS AMOUNT, R.ORNUMBER "+
+													var Query = " SELECT R.IDNO, R.SY, R.SEM, R.DATE, SUM(P.AMOUNT)::NUMERIC(10,2) AS AMOUNT, R.ORNUMBER "+
 																			" FROM RECEIPT R, PAYS P WHERE R.ORNUMBER=P.ORNUMBER AND R.IDNO=$1 "+
 																			" AND R.SY=$2 AND R.SEM=$3 "+
 																			" GROUP BY R.IDNO, R.SY, R.SEM, R.DATE, R.ORNUMBER UNION "+
@@ -3082,6 +3084,7 @@ router.post('/CORandSOA',function(request,response){
 																		if(err){
 																			console.log(err);
 																		}else{
+																			console.log(result);
 																				db.end();
 																				response.send(result);
 																		}
@@ -3093,6 +3096,7 @@ router.post('/CORandSOA',function(request,response){
 										}
 									})
 					}else{ // no OR check if student is scholar
+						console.log("wala or");
 						var Query = " SELECT ss.studid, s.schoolfunded, s.scholar FROM semstudent ss, scholar s "+
 												" WHERE ss.scholarcode=s.scholarcode AND NOT upper(s.scholar)=upper('paying') AND sy=$2 "+
 												" AND sem=$3 AND studid=$1";
@@ -3100,10 +3104,11 @@ router.post('/CORandSOA',function(request,response){
 								if(err){
 									console.log(err);
 								}else{
+									console.log(table.rows);
 										if(table.rows.length > 0){	//check if scholar
 											// new process effective 2016-2017 1st c/o registrar: validate if proceed printing
 											var Query = "SELECT studid FROM validation WHERE studid=$1 AND sy=$2 AND sem=$3 UNION "+
-																	" SELECT 'OverRide' WHERE '2012-20131st'> $2$3 ";
+																	" SELECT 'OverRide' WHERE '2012-20131st'>'$2$3' ";
 												db.query(Query,[studid,sy,sem],(err,table) =>{
 													if(err){
 														console.log(err);
@@ -3123,6 +3128,7 @@ router.post('/CORandSOA',function(request,response){
 																		}else{
 																			var r = table.rows;
 																			result.push({r,message:"Student is now validated! "});
+																			console.log(result);
 																		}
 																	})
 																}
@@ -3136,11 +3142,13 @@ router.post('/CORandSOA',function(request,response){
 																}else{
 																	var r = table.rows;
 																	result.push({r,message:"Student is now validated! "});
+																	console.log(result);
 																}
 															})
 														}
 													}
 												})
+
 												//total assessment
 												var Query = " SELECT studid,sy,sem,sum(amount)::NUMERIC(10,2) as amount from "+
 																		" (SELECT * FROM sql_assess($1, $2, $3)) as a group by studid,sy,sem ";
@@ -3149,7 +3157,8 @@ router.post('/CORandSOA',function(request,response){
 														console.log(err);
 													}else{
 														result.push(table.rows);
-														var Query = " SELECT R.IDNO, R.SY, R.SEM, R.DATE, SUM(P.AMOUNT)::::NUMERIC(10,2) AS AMOUNT, R.ORNUMBER "+
+console.log(result);
+														var Query = " SELECT R.IDNO, R.SY, R.SEM, R.DATE, SUM(P.AMOUNT)::NUMERIC(10,2) AS AMOUNT, R.ORNUMBER "+
 																				" FROM RECEIPT R, PAYS P WHERE R.ORNUMBER=P.ORNUMBER AND R.IDNO=$1 "+
 																				" AND R.SY=$2 AND R.SEM=$3 "+
 																				" GROUP BY R.IDNO, R.SY, R.SEM, R.DATE, R.ORNUMBER UNION "+
@@ -3170,20 +3179,23 @@ router.post('/CORandSOA',function(request,response){
 																	result.push(table.rows);
 																	var Query = " SELECT v.*, upper('ENROLMENT VALIDATED on: '||v.date_validated||'     by: '||m.firstname ||' '|| CASE WHEN length(substring(m.middlename,1,1))=1 THEN substring(m.middlename,1,1)||'.' ELSE '' END ||' '|| m.lastname) ::varchar AS remark "+
 																							"	FROM validation v, encoder e, employee m "+
-																							"	WHERE v.username=e.username AND e.empid=m.empid AND v.studid=$1 AND sy=$2 AND sem=$3 "+
-																							" ORDER BY DATE DESC";
+																							"	WHERE v.username=e.username AND e.empid=m.empid AND v.studid=$1 AND sy=$2 AND sem=$3 ";
 																		db.query(Query,[studid,sy,sem],(err,table) =>{
 																			if(err){
 																				console.log(err);
 																			}else{
+																				console.log(result);
 																					db.end();
-																					response.send(result);
+																					response.send({result,ok:"YES"});
 																			}
 																		})
 																}
 															})
 													}
 												})
+										}else{
+											db.end();
+											response.send({message: "You must provide an OR or confirm your scholarship details at the OSAS",ok: "NO"});
 										}
 								}
 							})
