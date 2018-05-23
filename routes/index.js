@@ -1222,12 +1222,12 @@ router.post('/getCategoryProgram',function(request,response){
 				var Query = "SELECT add_newsection($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)";
 				db.query(Query,[conflict,subjcode,stype,days,fromtime,totime,instructor,room,building,sy,sem,slot,is_requested,is_restricted,yearlevel,progcode,block,sdate,iscwts],(err,table) =>{
 					if(err){
-						console.log(err)
-						response.send(err)
+						console.log(err.message)
+						response.send({message:err.message})
 					}
 					else{
 						db.end();
-						response.send(table.rows)
+						response.send({message:"ok"})
 					}
 				})
 			}
@@ -2647,7 +2647,8 @@ router.post('/tuitionCompute',function(request,response){
 	var sy = request.body.sy;
 	var sem = request.body.sem;
 	var studid = request.body.studid;
-console.log(sy);
+	var result = [];
+console.log(sem);
 	pool.connect((err,db,done) =>{
 		if(err){
 			console.log(err);
@@ -2678,7 +2679,8 @@ console.log(sy);
 										if(err){
 											console.log(err);
 										}else{
-													let result = table.rows;
+													result = table.rows;
+													console.log(result,"kini");
 													var Query = "SELECT sum(StudTuitionLab.Amount)::NUMERIC(10,2) as  totalamount  "+
 																			"  FROM FUND_TYPE INNER JOIN (ASSESS INNER JOIN StudTuitionLab ON ASSESS.AsCode = StudTuitionLab.AsCode) ON FUND_TYPE.TypeCode = ASSESS.TypeCode "+
 																			"  WHERE (((StudTuitionLab.StudID)=$1) AND ((StudTuitionLab.SY)=$2) AND ((StudTuitionLab.Sem)=$3)) ";
@@ -2747,6 +2749,8 @@ console.log(sy);
 										if(err){
 											console.log(err);
 										}else{
+											result=table.rows;
+											console.log(result);
 											var Query = "SELECT sum(amount)::numeric(10,2) as totalamount FROM ( "+
 																	" SELECT b.studid,b.acadyear as sy,b.semester as sem,b.type as ascode,c.description as asdesc,b.amount,a.typecode,f.accdesc "+
 																	" FROM fund_type f,link_fmis.billingtypes c, assess a, "+
@@ -2762,14 +2766,14 @@ console.log(sy);
 												}else{
 														let totalpayable=0;
 														if(table.rows.length > 0){
-															 totalpayable = parseInt(table.rows[0].totalamount);
+															 totalpayable = parseFloat(table.rows[0].totalamount);
 														}else{
 															 totalpayable = 0;
 														}
 														//Skedfees
-														console.log(table.rows);
+														console.log(totalpayable);
 														db.end();
-														response.send(table.rows[0].totalamount);
+														response.send({result,totalpayable:totalpayable});
 												}
 											})
 										}
@@ -2793,8 +2797,8 @@ router.post('/skedfees',function(request,response){
 	var username = request.body.username;
 
 	let result = [];
-	let entrance = 0;
-	let prelim =0;
+	let entrance = 0.00;
+	let prelim =0.00;
 	pool.connect((err,db,done) =>{
 		if(err){
 			console.log(err);
@@ -2816,7 +2820,7 @@ router.post('/skedfees',function(request,response){
 									console.log(err);
 								}else{
 									if(table.rows.length > 0){
-										entrance = table.rows[0].amount
+										entrance = parseFloat(table.rows[0].amount);
 									}
 									let totalpayable33 = parseFloat(totalpayable) * 0.5;
 									if(parseFloat(totalpayable) <= 1500){
@@ -2831,14 +2835,13 @@ router.post('/skedfees',function(request,response){
 
 									}
 
-									var Query = "SELECT 1 as rank,'Initial Fee' as sked,$1::float as amount "+
-    													" UNION SELECT 2 as rank,'Prelim/Midterm Fee' as sked,$2::float as amount ORDER BY rank";
+									var Query = "SELECT 1 as rank,'Initial Fee' as sked,'$1'::float as amount "+
+    													" UNION SELECT 2 as rank,'Prelim/Midterm Fee' as sked,'$2'::float as amount ORDER BY rank";
 									db.query(Query,[entrance,prelim],(err,table) =>{
 										if(err){
 											console.log(err);
 										}else{
-												db.end();
-												response.send(table.rows);
+											result.push(table.rows);
 										}
 									})
 								}
@@ -2846,7 +2849,7 @@ router.post('/skedfees',function(request,response){
 					}else{
 						if( sysemno < 36){					//before 2011-2012 2nd semester
 							var Query = "SELECT sum(pays.amount)::numeric(10,2) as amount, receipt.ornumber, receipt.date FROM pays,receipt, "+
-											    " (SELECT receipt.* FROM pays,receipt, ($2) as lst WHERE receipt.ornumber=pays.ornumber and "+
+											    " (SELECT receipt.* FROM pays,receipt, (SELECT * FROM sql_assess($1,$2,$3)) as lst WHERE receipt.ornumber=pays.ornumber and "+
 											    " receipt.student=true and lst.ascode=pays.ascode and receipt.sy=$2 and receipt.sem=$3 and receipt.idno=$1 ORDER BY date LIMIT 1 "+
 											    " ) as ornum WHERE receipt.ornumber=pays.ornumber and receipt.student=true and receipt.sy=ornum.sy "+
 											    "  and receipt.sem=ornum.sem and receipt.idno=ornum.idno and receipt.ornumber=ornum.ornumber "+
@@ -2856,13 +2859,13 @@ router.post('/skedfees',function(request,response){
 								if(err){
 									console.log(err);
 								}else{
-										db.end();
-										response.send(table.rows);
+										result.push(table.rows);
 								}
 							})
 						}else{		//after 2011-2012 1st
+
 							var Query = "SELECT sum(p.amount)::numeric(10,2) as amount, r.refrcpt, r.receiptdate FROM link_fmis.collectionitems p,link_fmis.collections r, link_fmis.billingaccounts b, "+
-											    " (SELECT r.*, b.acadyear, b.semester FROM link_fmis.collectionitems p,link_fmis.collections r, link_fmis.billingaccounts b, ($2) as lst WHERE r.receiptnum=p.receiptnum AND p.refcode=b.code "+
+											    " (SELECT r.*, b.acadyear, b.semester FROM link_fmis.collectionitems p,link_fmis.collections r, link_fmis.billingaccounts b, (SELECT * FROM sql_assess($1,$2,$3)) as lst WHERE r.receiptnum=p.receiptnum AND p.refcode=b.code "+
 											    " AND b.acadyear=$2 and b.semester=$3 and R.refidno=$1 ORDER BY R.receiptDATE LIMIT 1 "+
 											    " ) as ornum WHERE r.receiptnum=p.receiptnum AND p.refcode=b.code and b.acadyear=ornum.acadyear "+
 											    "  and b.semester=ornum.semester and R.refidno=ornum.refidno and r.refrcpt=ornum.refrcpt "+
@@ -2872,17 +2875,27 @@ router.post('/skedfees',function(request,response){
 								if(err){
 									console.log(err);
 								}else{
-										entrance = parseFloat(table.rows[0].amount)
+										entrance = parseFloat(table.rows[0].amount);
+									//	console.log(entrance);
 								}
 							})
 						}
-						var Query = "SELECT feescheme($1,$2) as sql";
-						db.query(Query,[entrance,totalpayable],(err,table) =>{
+						var Query = "SELECT replace(feescheme($1,$2),'::::','::') as sql";
+						//console.log(entrance);
+						db.query("SELECT replace(feescheme($1,$2),'::::','::') as sql",[entrance,totalpayable],(err,table) =>{
 							if(err){
 								console.log(err);
 							}else{
 									let sql = table.rows[0].sql;
-									//Ln 1761-1767
+									var Query = sql;
+									console.log(sql);
+									db.query(Query,(err,table) =>{
+										if(err){
+											console.log(err);
+										}else{
+												result.push(table.rows);
+										}
+									})
 							}
 						})
 					}
@@ -3141,8 +3154,8 @@ console.log(studid,sy,sem,or,current_user,current_date)
 																	console.log(err);
 																}else{
 																	var r = table.rows;
-																	result.push({r,message:"Student is now validated! "});
-																	console.log(result);
+																	result.push({r,message:"Student validation updated! "});
+																	console.log(result,current_date);
 																}
 															})
 														}
@@ -3185,6 +3198,7 @@ console.log(result);
 																				console.log(err);
 																			}else{
 																				console.log(result);
+																				result.push(table.rows);
 																					db.end();
 																					response.send({result,ok:"YES"});
 																			}
@@ -3225,7 +3239,7 @@ router.post('/SOA',function(request,response){
 					console.log(err);
 				}else{
 					result = table.rows;
-					var Query = " SELECT R.IDNO, R.SY, R.SEM, R.DATE, SUM(P.AMOUNT)::::NUMERIC(10,2) AS AMOUNT, R.ORNUMBER "+
+					var Query = " SELECT R.IDNO, R.SY, R.SEM, R.DATE, SUM(P.AMOUNT)::NUMERIC(10,2) AS AMOUNT, R.ORNUMBER "+
 											" FROM RECEIPT R, PAYS P WHERE R.ORNUMBER=P.ORNUMBER AND R.IDNO=$1 "+
 											" AND R.SY=$2 AND R.SEM=$3 "+
 											" GROUP BY R.IDNO, R.SY, R.SEM, R.DATE, R.ORNUMBER UNION "+
