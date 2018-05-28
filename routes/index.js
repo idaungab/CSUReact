@@ -1750,7 +1750,7 @@ router.post('/evalIfNotELEMHS',function(request,response){
 									result.push(table.rows);
 									//console.log(result);
 									db.end();
-									response.send(result);
+									response.send({result,message:"Student has enrolled courses already."});
 							}
 						})
 					}else{
@@ -1872,7 +1872,7 @@ router.post('/checkOfferedtoStudent', function(request, response) {
 	var block = request.body.block;
 	var progcode = request.body.progcode;
 	var year = request.body.year;
-
+console.log(block);
 	pool.connect((err,db,done)=>{
 		if(err){
 			console.log(err);
@@ -1889,7 +1889,7 @@ router.post('/checkOfferedtoStudent', function(request, response) {
 					console.log(err);
 				}
 				else {
-					if(table.rows.length === 0 && block != ''){
+					if(table.rows.length === 0 && block !== ''){
 								var Query1 = "SELECT distinct $6,subjcode,section,sy,sem FROM offeredfor "+
 											" WHERE sy=$1 and sem=$2 and  $4 ilike progcode||'%' and block=$3 and studlevel=$5";
 								db.query(Query1,[sy,sem,block,progcode,year,studid],(err,table) =>{
@@ -1897,7 +1897,7 @@ router.post('/checkOfferedtoStudent', function(request, response) {
 										console.log(err);
 									}
 									else {
-										if(table.rows.length > 0){
+										if(table.rows.length > 0){	// individually insert each course in the block except those taken and passed already
 											var Query2= " INSERT INTO registration(studid,subjcode,section,sy,sem) "+
 																	" SELECT distinct $6,o.subjcode,section,$1,$2 FROM offeredfor o, "+
 																	" (SELECT subjcode FROM offeredfor WHERE sy=$1 and sem=$2 and $4 ilike progcode " +
@@ -1917,7 +1917,6 @@ router.post('/checkOfferedtoStudent', function(request, response) {
 															console.log(err);
 														}
 														else {
-															console.log(table.rows);
 																var subjcode = table.rows[0].subjcode;
 																var Query4= " SELECT DISTINCT * FROM "+
 																					" (SELECT DISTINCT SUBJECT.courseno, OfferedSubject.subjcode, OfferedSubject.section, OfferedSubject.SY, OfferedSubject.Sem, "+
@@ -1964,7 +1963,7 @@ router.post('/checkOfferedtoStudent', function(request, response) {
 								})
 						}else{
 							db.end();
-							response.send({message:"No Block Supplied!"});
+							response.send({message:"Registration record has been found!"});
 						}
 				}
 				})
@@ -2841,7 +2840,7 @@ router.post('/skedfees',function(request,response){
 										if(err){
 											console.log(err);
 										}else{
-											result.push(table.rows);
+											result.push({sysemno33: table.rows});
 										}
 									})
 								}
@@ -2859,7 +2858,7 @@ router.post('/skedfees',function(request,response){
 								if(err){
 									console.log(err);
 								}else{
-										result.push(table.rows);
+										result.push({sysemno36:table.rows});
 								}
 							})
 						}else{		//after 2011-2012 1st
@@ -2875,14 +2874,16 @@ router.post('/skedfees',function(request,response){
 								if(err){
 									console.log(err);
 								}else{
+										console.log(table.rows[0].amount);
 										entrance = parseFloat(table.rows[0].amount);
+										result.push({updatedsysemno: table.rows});
 									//	console.log(entrance);
 								}
 							})
 						}
 						var Query = "SELECT replace(feescheme($1,$2),'::::','::') as sql";
 						//console.log(entrance);
-						db.query("SELECT replace(feescheme($1,$2),'::::','::') as sql",[entrance,totalpayable],(err,table) =>{
+						db.query(Query,[entrance,totalpayable],(err,table) =>{
 							if(err){
 								console.log(err);
 							}else{
@@ -2893,7 +2894,7 @@ router.post('/skedfees',function(request,response){
 										if(err){
 											console.log(err);
 										}else{
-												result.push(table.rows);
+												result.push({feescheme:table.rows});
 										}
 									})
 							}
@@ -2942,7 +2943,7 @@ router.post('/skedfees',function(request,response){
 						if(err){
 							console.log(err);
 						}else{
-							result = table.rows;
+							result.push({COR:table.rows});
 							var Query = "SELECT DISTINCT registration.oid,registration.sy,registration.sem,registration.studid,(case when offeredSubject.is_requested then '*'||subject.courseno else subject.courseno end) as subjcode,registration.section, "+
 								        	" subject.description,subject.lec::varchar,subject.lab::varchar,subject.lec::varchar as unit,(CASE WHEN ((subject.subjcode like 'NSTP%') OR (subject.subjcode like 'MS %')  OR (subject.subjcode like 'MTS %')) THEN '('||unit::varchar||')' ELSE unit::varchar END)::varchar as credit    "+
 										      " FROM registration,offeredSubject,subject,schedule "+
@@ -2964,7 +2965,7 @@ router.post('/skedfees',function(request,response){
 								if(err){
 									console.log(err);
 								}else{
-									result.push(table.rows);
+									result.push({cashiersubj:table.rows});
 									var Query = "SELECT distinct student.*,semstudent.*,studinfo.sex::varchar,scholar.scholar, qry.emp as emp,current_date as today, (substring(middlename,1,1)||'.')::varchar as mi "+
 															" FROM student,semstudent,studinfo,scholar, "+
 															" (select (firstname||' '||lastname)::varchar as emp from employee,encoder where encoder.empid=employee.empid AND encoder.username=$4) as qry  "+
@@ -2978,7 +2979,7 @@ router.post('/skedfees',function(request,response){
 										if(err){
 											console.log(err);
 										}else{
-												result.push(table.rows);
+												result.push({studinfo:table.rows});
 												db.end();
 												response.send(result);
 										}
@@ -3222,8 +3223,8 @@ console.log(result);
 /**** END of printing Statement of Account and COR ***/
 
 /****** Printing Statement of Account only ****/
-router.post('/SOA',function(request,response){
-	var progcode = request.body.progcode;
+router.post('/SOA',function(request,response){			//an option to possibly print the Statement of Account Only
+	var studid = request.body.studid;
 	var sy = request.body.sy;
 	var sem = request.body.sem;
 	let result = [];
