@@ -1,5 +1,6 @@
 var express = require('express');
 var router = express.Router();
+var helmet = require('helmet')
 const bodyParser = require('body-parser');
 const logger = require('morgan');
 
@@ -15,7 +16,7 @@ const config = {
 	connectionTimeoutMillis: 3000
 }
 let pool = new pg.Pool(config);
-
+router.use(helmet())
 router.use(logger('dev'));
 router.use(bodyParser.json());
 router.use(bodyParser.urlencoded({extended:false}));
@@ -1811,13 +1812,15 @@ router.post('/checkOfferingToStudent', function(request, response) {
 //*** Check Clearnce ***//
 router.post('/checkClearance', function(request, response) {
 	var studid = request.body.studid;
+	var sy = request.body.sy;
+	var sem = request.body.sem;
 	pool.connect((err,db,done)=>{
 		if(err){
 			console.log(err);
 		}
 		else {
-			var Query = "SELECT * FROM clearance.studentclearances WHERE studid=$1 AND datecleared isnull";
-			db.query(Query,[studid],(err,table) =>{
+			var Query = "SELECT * FROM clearance.studentclearances WHERE studid=$1 AND datecleared ISNULL AND (schoolyear||semester)<($2||$3)";
+			db.query(Query,[studid,sy,sem],(err,table) =>{
 				if(err){
 					console.log(err);
 				}
@@ -2012,8 +2015,8 @@ router.post('/InsertUpdateEnrollStudent', function(request, response) {
 				})
 			}
 			if(savemode === 'UPDATE'){
-				var Query = "UPDATE semstudent SET status=$1, maxload=$2, standing=$3 WHERE studid=$4 and sy=$5 and sem=$6";
-				db.query(Query,[status,maxload,scholastic_stat,studid,sy,sem],(err,table) =>{
+				var Query = "UPDATE semstudent SET status=$1, maxload=$2, standing=$3,studlevel=$7,cur_year=$8 WHERE studid=$4 and sy=$5 and sem=$6";
+				db.query(Query,[status,maxload,scholastic_stat,studid,sy,sem,studlevel,cur_year],(err,table) =>{
 					if(err){
 						console.log(err);
 					}
@@ -2445,7 +2448,7 @@ router.post('/verificationCodeSubmission', function(request, response) {
 					if(table.rows.length > 0){
 						var versubjcode = table.rows[0].subjcode;
 						var versection = table.rows[0].section;
-
+						console.log(versubjcode);
 						var Query = "SELECT sum(unit) as load from "+
 												" (SELECT subjcode, unit FROM ( "+
 												" SELECT distinct R.subjcode,subject.unit "+
@@ -2473,7 +2476,7 @@ router.post('/verificationCodeSubmission', function(request, response) {
 			 										        " AND not(d.sy=$2 AND d.sem ilike $3) ORDER BY d.sy desc, d.sem desc limit 1) AS GR " +
 			 										        " FROM subject s where s.subjcode=$4 AND not(s.subjcode like 'NSTP%' OR s.subjcode like 'MS %' )) AS A " +
 			 										        " WHERE (not GR IN ('IN PROG', 'IN PROGRESS')) OR GR ISNULL ";
-			 							db.query(Query1,[studid,sy,sem,subjcode],(err,table) =>{
+			 							db.query(Query1,[studid,sy,sem,versubjcode],(err,table) =>{
 			 								if(err){
 			 									console.log(err);
 			 								}
@@ -2489,7 +2492,7 @@ router.post('/verificationCodeSubmission', function(request, response) {
 																var can_add = table.rows[0].can_add;
 																// console.log(can_add);
 																if(can_add === false){
-																		message = "WARNING! " + courseno + " is conflict with other schedule.";
+																		message = "WARNING! " + versubjcode + " is conflict with other schedule.";
 																		db.end();
 																		response.send({message,add: "FALSE"});
 																}
@@ -2516,7 +2519,7 @@ router.post('/verificationCodeSubmission', function(request, response) {
 																							}
 																						})
 																					}
-																					var Query = " INSERT INTO registration (studid,sy,sem,subjcode,section) VALUES(:studid,:sy,:sem,:subjcode,:section) ";
+																					var Query = " INSERT INTO registration (studid,sy,sem,subjcode,section) VALUES($1,$2,$3,$4,$5) ";
 																					db.query(Query,[studid,sy,sem,versubjcode,versection],(err,table) =>{
 																						if(err){
 																							console.log(err);
@@ -2551,12 +2554,14 @@ router.post('/verificationCodeSubmission', function(request, response) {
 																						}
 																					})
 																				}
-																				var Query = " INSERT INTO registration (studid,sy,sem,subjcode,section) VALUES(:studid,:sy,:sem,:subjcode,:section) ";
+																				var Query = " INSERT INTO registration (studid,sy,sem,subjcode,section) VALUES($1,$2,$3,$4,$5) ";
 																				db.query(Query,[studid,sy,sem,versubjcode,versection],(err,table) =>{
 																					if(err){
 																						console.log(err);
 																					}
 																					else {
+																						db.end();
+																						response.send({message: "Successfully added 1 slot!"});
 																						console.log("INSERTED!");
 																					}
 																				})
@@ -2659,7 +2664,7 @@ console.log(sem);
 				if(err){
 					console.log(err);
 				}else{
-						console.log(progcode);
+						// console.log(table.rows[0].sysemno);
 						let sysemno = table.rows[0].sysemno;
 						var Query = "SELECT * FROM program WHERE progcode=$1";
 
@@ -2668,7 +2673,7 @@ console.log(sem);
 								console.log(err);
 							}else{
 								if(sysemno < 24){  //School year 2007-2008 1st sem and below
-									console.log("24");
+									//console.log("24");
 									var Query = "SELECT StudTuitionLab.StudID, StudTuitionLab.SY, StudTuitionLab.Sem, StudTuitionLab.AsCode, ASSESS.AsDesc, StudTuitionLab.Amount::NUMERIC(10,2) AS amount, FUND_TYPE.TypeCode, FUND_TYPE.AccDesc "+
 														"  FROM FUND_TYPE INNER JOIN (ASSESS INNER JOIN StudTuitionLab ON ASSESS.AsCode = StudTuitionLab.AsCode) ON FUND_TYPE.TypeCode = ASSESS.TypeCode  "+
 														"  WHERE (((StudTuitionLab.StudID)=$1) AND ((StudTuitionLab.SY)=$2) AND ((StudTuitionLab.Sem)=$3))  "+
@@ -2679,7 +2684,7 @@ console.log(sem);
 											console.log(err);
 										}else{
 													result = table.rows;
-													console.log(result,"kini");
+												//	console.log(result,"kini");
 													var Query = "SELECT sum(StudTuitionLab.Amount)::NUMERIC(10,2) as  totalamount  "+
 																			"  FROM FUND_TYPE INNER JOIN (ASSESS INNER JOIN StudTuitionLab ON ASSESS.AsCode = StudTuitionLab.AsCode) ON FUND_TYPE.TypeCode = ASSESS.TypeCode "+
 																			"  WHERE (((StudTuitionLab.StudID)=$1) AND ((StudTuitionLab.SY)=$2) AND ((StudTuitionLab.Sem)=$3)) ";
@@ -2688,7 +2693,7 @@ console.log(sem);
 															console.log(err);
 														}else{
 																result.push(table.rows);
-																console.log(table.rows);
+																//console.log(table.rows);
 																db.end();
 																response.send(result);
 														}
@@ -2710,7 +2715,7 @@ console.log(sem);
 													console.log(err);
 												}else{
 														result.push(table.rows);
-														console.log(result);
+														//console.log(result);
 														db.end();
 														response.send(result);
 												}
@@ -2718,7 +2723,7 @@ console.log(sem);
 										}
 									})
 								}else{  		//*** Academic year 2011-2012 2nd sem and above, update due to new table in FARM
-									console.log("walay lain");
+									//console.log("walay lain");
 									var Query = "SELECT * FROM "+
 															" (SELECT b.studid,b.acadyear as sy,b.semester as sem,b.type as ascode,c.description as asdesc,b.amount,a.typecode,f.accdesc "+
 															"  FROM fund_type f,link_fmis.billingtypes c, assess a,  "+
@@ -2749,7 +2754,7 @@ console.log(sem);
 											console.log(err);
 										}else{
 											result=table.rows;
-											console.log(result);
+											//console.log(result);
 											var Query = "SELECT sum(amount)::numeric(10,2) as totalamount FROM ( "+
 																	" SELECT b.studid,b.acadyear as sy,b.semester as sem,b.type as ascode,c.description as asdesc,b.amount,a.typecode,f.accdesc "+
 																	" FROM fund_type f,link_fmis.billingtypes c, assess a, "+
@@ -2770,7 +2775,7 @@ console.log(sem);
 															 totalpayable = 0;
 														}
 														//Skedfees
-														console.log(totalpayable);
+														//console.log(totalpayable);
 														db.end();
 														response.send({result,totalpayable:totalpayable});
 												}
@@ -2840,7 +2845,7 @@ router.post('/skedfees',function(request,response){
 										if(err){
 											console.log(err);
 										}else{
-											result.push({sysemno33: table.rows});
+											result.push({paymenthistory: table.rows});
 										}
 									})
 								}
@@ -2858,7 +2863,7 @@ router.post('/skedfees',function(request,response){
 								if(err){
 									console.log(err);
 								}else{
-										result.push({sysemno36:table.rows});
+										result.push({paymenthistory:table.rows});
 								}
 							})
 						}else{		//after 2011-2012 1st
@@ -2874,9 +2879,14 @@ router.post('/skedfees',function(request,response){
 								if(err){
 									console.log(err);
 								}else{
-										console.log(table.rows[0].amount);
-										entrance = parseFloat(table.rows[0].amount);
-										result.push({updatedsysemno: table.rows});
+										if(table.rows.length === 0){
+											entrance = 0;
+											result.push({paymenthistory: []});
+										}else{
+											entrance = parseFloat(table.rows[0].amount);
+											result.push({paymenthistory: table.rows});
+										}
+
 									//	console.log(entrance);
 								}
 							})
@@ -3026,11 +3036,12 @@ console.log(studid,sy,sem,or,current_user,current_date)
 						console.log("naa or");
 						//new process effective 2016-2017 1st c/o registrar: validate if proceed printing
 									var Query = " SELECT studid FROM validation WHERE studid=$1 AND sy=$2 AND sem=$3 UNION "+
-															" SELECT 'OverRide' WHERE '2012-20131st' > $2$3 ";
+															" SELECT 'OverRide' WHERE '2012-20131st' > '$2$3' ";
 									db.query(Query,[studid,sy,sem],(err,table) =>{
 										if(err){
 											console.log(err);
 										}else{
+											result.push(table.rows);
 											if(table.rows.length === 0){  //not yet validated
 												var Query = " INSERT INTO validation(studid, sy, sem, username, date_validated, validatedby) "+
 																		" VALUES($1,$2,$3,$4,$5,$4) ";
@@ -3044,8 +3055,7 @@ console.log(studid,sy,sem,or,current_user,current_date)
 															if(err){
 																console.log(err);
 															}else{
-																	var r = table.rows;
-																	result.push({r,message:"Student is now validated! "});
+																	result.push({message:"Student is now validated! "});
 															}
 														})
 													}
@@ -3057,8 +3067,8 @@ console.log(studid,sy,sem,or,current_user,current_date)
 													if(err){
 														console.log(err);
 													}else{
-														var r = table.rows;
-														result.push({r,message:"Student validation updated! "});
+														//console.log(table.rows);
+														result.push({message:"Student validation updated! "});
 													}
 												})
 											}
@@ -3092,13 +3102,12 @@ console.log(studid,sy,sem,or,current_user,current_date)
 																result.push(table.rows);
 																var Query = " SELECT v.*, upper('ENROLMENT VALIDATED on: '||v.date_validated||'     by: '||m.firstname ||' '|| CASE WHEN length(substring(m.middlename,1,1))=1 THEN substring(m.middlename,1,1)||'.' ELSE '' END ||' '|| m.lastname) ::varchar AS remark "+
 																						"	FROM validation v, encoder e, employee m "+
-																						"	WHERE v.username=e.username AND e.empid=m.empid AND v.studid=$1 AND sy=$2 AND sem=$3 "+
-																						" ORDER BY DATE DESC";
+																						"	WHERE v.username=e.username AND e.empid=m.empid AND v.studid=$1 AND sy=$2 AND sem=$3 ";
 																	db.query(Query,[studid,sy,sem],(err,table) =>{
 																		if(err){
 																			console.log(err);
 																		}else{
-																			console.log(result);
+																			//console.log(result);
 																				db.end();
 																				response.send(result);
 																		}
@@ -3156,7 +3165,7 @@ console.log(studid,sy,sem,or,current_user,current_date)
 																}else{
 																	var r = table.rows;
 																	result.push({r,message:"Student validation updated! "});
-																	console.log(result,current_date);
+																	//console.log(result,current_date);
 																}
 															})
 														}
@@ -3171,7 +3180,7 @@ console.log(studid,sy,sem,or,current_user,current_date)
 														console.log(err);
 													}else{
 														result.push(table.rows);
-console.log(result);
+//console.log(result);
 														var Query = " SELECT R.IDNO, R.SY, R.SEM, R.DATE, SUM(P.AMOUNT)::NUMERIC(10,2) AS AMOUNT, R.ORNUMBER "+
 																				" FROM RECEIPT R, PAYS P WHERE R.ORNUMBER=P.ORNUMBER AND R.IDNO=$1 "+
 																				" AND R.SY=$2 AND R.SEM=$3 "+
@@ -3198,7 +3207,7 @@ console.log(result);
 																			if(err){
 																				console.log(err);
 																			}else{
-																				console.log(result);
+																				//console.log(result);
 																				result.push(table.rows);
 																					db.end();
 																					response.send({result,ok:"YES"});
