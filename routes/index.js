@@ -1,6 +1,7 @@
 var express = require('express');
 var router = express.Router();
-var helmet = require('helmet')
+var helmet = require('helmet');
+var crypto = require('crypto');
 const bodyParser = require('body-parser');
 const logger = require('morgan');
 
@@ -15,6 +16,10 @@ const config = {
 	max:Infinity,
 	connectionTimeoutMillis: 3000
 }
+var r_pass = crypto.randomBytes(128);
+// convert passphrase to base64 format
+var passphrase = r_pass.toString("base64");
+
 let pool = new pg.Pool(config);
 router.use(helmet())
 router.use(logger('dev'));
@@ -30,28 +35,33 @@ router.use(function(request, response, next){
 router.get('/', function(req, res, next) {
   res.render('index', { title: 'Express' });
 });
-
-router.get('/sample', function(req, res){
- res.send('hello from sample')
-});
-
+router.get('/crypto/passphrase',function(request,response){
+	response.send({"passphrase":passphrase});
+})
 router.get('/getRoom',function(req, res){
-	pool.connect((err,db,done) => {
-	if(err) {
-	console.log(err)
-	}
-	else{
-		db.query('SELECT * from room',(err,table) => {
-		if(err){
-		console.log(err);
+	var token = req.body.token;
+	if(passphrase !== token){
+		pool.connect((err,db,done) => {
+		if(err) {
+		console.log(err)
 		}
 		else{
-		db.end();
-		res.send(table.rows);
-		}
-   	  })
-	 }
-	})
+			db.query('SELECT * from room',(err,table) => {
+			if(err){
+			console.log(err);
+			}
+			else{
+			db.end();
+			res.send({data:table.rows});
+			}
+	   	  })
+		 }
+		})
+	}
+	else{
+		res.send({data:"error"});
+	}
+
 });
 router.get('/studentData',function(req, res){
 	pool.connect((err,db,done) => {
@@ -982,6 +992,90 @@ router.post('/getCategoryProgram',function(request,response){
 	});
 	//**** End Get Courseno **** //
 
+	//**** Start Get  Courseno Detail **** //
+	router.post('/getCoursenoDetail', function(req, res) {
+		var courseno = req.body.courseno;
+		var subjcode = req.body.subjcode;
+
+	  pool.connect((err,db,done)=>{
+	    if(err){
+	      console.log(err);
+	    }
+	    else {
+				var Query = "SELECT a.courseno,a.subjcode,a.description,a.lec,a.lab,a.unit from subject a  WHERE a.courseno = $1 AND a.subjcode = $2";
+	      db.query(Query,[courseno,subjcode],(err,table) =>{
+	        if(err){
+	          console.log(err);
+	        }
+	        else {
+	          db.end();
+	          res.send(table.rows);
+	        }
+	      })
+	    }
+	  })
+	});
+	//**** End Get Courseno Detail **** //
+
+	//**** Start Get  Blocking Detail **** //
+	router.post('/getBlockingDetail', function(req, res) {
+		var subjcode = req.body.subjcode;
+		var section = req.body.section;
+		var sy = req.body.sy;
+		var sem = req.body.sem;
+
+	  pool.connect((err,db,done)=>{
+	    if(err){
+	      console.log(err);
+	    }
+	    else {
+				var Query = "SELECT * FROM offeredfor WHERE subjcode=$1 AND section=$2 AND sy=$3 AND sem=$4";
+	      db.query(Query,[subjcode,section,sy,sem],(err,table) =>{
+	        if(err){
+	          console.log(err);
+	        }
+	        else {
+	          db.end();
+	          res.send(table.rows);
+	        }
+	      })
+	    }
+	  })
+	});
+	//**** End Get Blocking Detail **** //
+
+	//**** Start Get  Schedule Detail **** //
+	router.post('/getScheduleDetail', function(req, res) {
+		var subjcode = req.body.subjcode;
+		var section = req.body.section;
+		var sy = req.body.sy;
+		var sem = req.body.sem;
+
+	  pool.connect((err,db,done)=>{
+	    if(err){
+	      console.log(err);
+	    }
+	    else {
+				var Query = "SELECT DISTINCT a.subjcode, a.section, a.sy, a.sem, a.days, " +
+   "to_char(to_timestamp(a.fromtime::text, 'HH24:MI:SS'::text), 'HH12:MI AM') as fromtime, " +
+   "to_char(to_timestamp(a.totime::text, 'HH24:MI:SS'::text), 'HH12:MI AM') as totime, a.sdate, " +
+   "a.room, a.bldg, a.leclab, a.empid, UPPER(b.lastname || ', '::text || b.firstname)::varchar as instructor, c.slots, c.enrollees, c.is_restricted, c.is_requested " +
+   "FROM schedule a, offeredsubject c, employee b WHERE a.sy=c.sy and a.sem=c.sem and a.section=c.section and a.subjcode=c.subjcode " +
+   "and a.empid=b.empid and a.subjcode=$1 AND a.section=$2 AND a.sy=$3 AND a.sem=$4";
+	      db.query(Query,[subjcode,section,sy,sem],(err,table) =>{
+	        if(err){
+	          console.log(err);
+	        }
+	        else {
+	          db.end();
+	          res.send(table.rows);
+	        }
+	      })
+	    }
+	  })
+	});
+	//**** End Get Schedule Detail **** //
+
 	//**** Start Get Predefined Schedule **** //
 	router.get('/getPreSched', function(req, res) {
 	  pool.connect((err,db,done)=>{
@@ -1289,6 +1383,32 @@ router.post('/getCategoryProgram',function(request,response){
 	})
 	// **** End of getting class list ****//
 
+	// **** Start of getting subject detail ****//
+	router.post('/getSubjectDetail',function(request,response){
+		var sy = request.body.sy;
+		var sem = request.body.sem;
+		var subjcode = request.body.subjcode;
+		var section = request.body.section;
+		pool.connect((err,db,done)=>{
+			if(err){
+				console.log(err)
+			}
+			else{
+				var Query = "SELECT * FROM offeredsubject WHERE subjcode=$1 AND section=$2 AND sy=$3 AND sem=$4";
+				db.query(Query,[subjcode,section,sy,sem],(err,table) =>{
+					if(err){
+						console.log(err)
+					}
+					else{
+						db.end();
+						response.send(table.rows)
+					}
+				})
+			}
+		})
+	})
+	// **** End of getting offered subject detail  ****//
+
 //***************************
 //END Scheduling Module *****
 //***************************
@@ -1297,6 +1417,65 @@ router.post('/getCategoryProgram',function(request,response){
 /*/********************
 //* Enrolment Module *
 //********************/
+router.post('/enrolmentGrantControl',function(request,response){
+	var uid = request.body.uid;
+	var result = [];
+  pool.connect((err,db,done) =>{
+    if(err){
+      return response.status(400).send(err);
+    }else{
+			var query = "SELECT grantctrl_prevenrolment($1) AS g";
+      db.query(query, [uid], (err,table) => {
+        if(err){
+					console.log(err);
+					console.log("message: error");
+        }else{
+							if(table.rows.length > 0){
+								if(table.rows[0].g){
+									result.push({g:"true"});
+								}else{
+									result.push({g:"false"});
+								}
+							}else{
+								result.push({g:""});
+							}
+
+							var query = "SELECT b.groname::varchar, b.grosysid , a.usename "+
+										      " FROM pg_user a , pg_group b                             "+
+										      " WHERE a.usesysid = ANY (b.grolist) AND a.usename=$1";
+				      db.query(query, [uid], (err,table) => {
+				        if(err){
+									console.log(err);
+									console.log("message: error");
+				        }else{
+											if(table.rows.length > 0){
+												result.push({grpname: table.rows});
+											}
+
+											var query = "SELECT b.groname, b.grosysid , a.usename FROM pg_user a , pg_group b "+
+      														" WHERE a.usesysid = ANY (b.grolist) AND a.usename=$1  AND b.groname='dean' ";
+								      db.query(query, [uid], (err,table) => {
+								        if(err){
+													console.log(err);
+													console.log("message: error");
+								        }else{
+															if(table.rows.length > 0 || uid ==='postgres'){
+																result.push({is_dean:"True",maxload_readOnly:"False"});
+															}else{
+																result.push({is_dean:"False",maxload_readOnly:"True"});
+															}
+
+															db.end();
+															response.send(result);
+								        }
+								      })
+				        }
+				      })
+        }
+      })
+    }
+  })
+});
 
 router.post('/getIDSearchCategory',function(request,response){
 	var search = request.query.search;
@@ -1524,27 +1703,6 @@ router.get('/getfromStudenttag', function(req, res) {
 });
 //** End of getting studenttag **//
 
-//**** Get data in table registration ***//
-router.get('/getRegistration', function(req, res) {
-  pool.connect((err,db,done)=>{
-    if(err){
-      console.log(err);
-    }
-    else {
-      db.query('SELECT * from registration', (err,table) =>{
-        if(err){
-          console.log(err);
-        }
-        else {
-          db.end();
-          res.send(table.rows);
-        }
-      })
-    }
-  })
-});
-//*** End of getting data in registration ***//
-
 //**** Get data in table status ***//
 router.get('/getStatus', function(req, res) {
   pool.connect((err,db,done)=>{
@@ -1565,6 +1723,42 @@ router.get('/getStatus', function(req, res) {
   })
 });
 //*** End of getting data in status***//
+
+//**** Check registration data***//
+router.post('/checkRegistration', function(request, response) {
+	var studid = request.body.studid;
+	var sy = request.body.sy;
+	var sem = request.body.sem;
+
+  pool.connect((err,db,done)=>{
+    if(err){
+      console.log(err);
+    }
+    else {
+      db.query('SELECT studid,sy,sem,datevalidated FROM registration WHERE studid=$1 and sy=$2 and sem=$3',[studid,sy,sem], (err,table) =>{
+        if(err){
+          console.log(err);
+        }
+        else {
+					if(table.rows.length > 0){
+						if(table.rows[0].datevalidated === null ){
+							db.end();
+							response.send({message:"Student is not yet validated!",isValidated: false});
+						}else{
+							db.end();
+							response.send({message:"Student already validated!",isValidated: true});
+						}
+					}else{
+						db.end();
+						response.send({message:"No registration record found!", isValidated: false});
+					}
+
+        }
+      })
+    }
+  })
+});
+//*** End of getting data in registration ***//
 
 //**Get studenttag details**//
 router.post('/getBlocks',function(request,response){
@@ -1635,6 +1829,8 @@ router.post('/whenNotFoundinStudenttag',function(request,response){
 	var studid = request.body.studid;
 	var sem = request.body.sem;
 	var sy = request.body.sy;
+	var uid = request.body.uid;
+	var result =[];
 
 	pool.connect((err,db,done) =>{
 		if(err){
@@ -1663,9 +1859,8 @@ router.post('/whenNotFoundinStudenttag',function(request,response){
 								console.log(err);
 							}
 							else{
+								result.push({priorsemdata: table.rows});
 								//*** Get Scholastic standing
-								var result = table.rows;
-
 								var Query3 = "SELECT scholastic_status($1,$3,$2) AS standing";
 
 								db.query(Query3,[studid,sem,sy],(err,table) =>{
@@ -1675,34 +1870,108 @@ router.post('/whenNotFoundinStudenttag',function(request,response){
 									else{
 
 										if(table.rows.length > 0){
-											result.push(table.rows);
-
-											var Query4 = "SELECT gpa($1,$3,$2) AS gpa";
-
-											db.query(Query4,[studid,sem,sy],(err,table) =>{
-												if(err){
-													console.log(err);
-												}
-												else{
-													if(table.rows.length > 0){
-														result.push(table.rows);
-														db.end();
-														response.send(result);
-													}
-												}
-											})
+											result.push({schocstat:table.rows});
 										}
+
+										var Query4 = "SELECT gpa($1,$3,$2) AS gpa";
+
+										db.query(Query4,[studid,sem,sy],(err,table) =>{
+											if(err){
+												console.log(err);
+											}
+											else{
+												if(table.rows.length > 0){
+													result.push({gpa: table.rows});
+												}else{
+													result.push({gpa: 0});
+												}
+											}
+										})
 									}
 								})
 							}
 						})
 					}
+
+					var query = "SELECT DISTINCT b.ugrp, b.grant as g FROM (SELECT b.groname::varchar as ugrp, "+
+											"	true as grant FROM pg_user a , pg_group b WHERE a.usesysid = ANY (b.grolist) AND a.usename=$1 AND groname IN ('registrar','suser','guidance')) as b  "+
+											"		UNION SELECT DISTINCT b.ugrp, b.grant as g FROM studsubj_controller sc  "+
+											"		,(SELECT b.groname::varchar as ugrp, true as grant FROM pg_user a , pg_group b WHERE a.usesysid = ANY (b.grolist) AND a.usename=$1 AND groname IN ('adviser','dean')) as b  "+
+											"		WHERE sc.username=$1";
+
+					db.query(query,[uid],(err,table) =>{
+						if(err){
+							console.log(err);
+						}
+						else{
+							result.push({usergrant: table.rows});
+							db.end();
+							response.send();
+						}
+					})
 				}
 			})
 		}
 	})
 });
 //** End of getting student data from prior sem **//
+
+//*** Check grant to user logged in during student registration **//
+router.post('/checkGrantStudentReg',function(request,response){
+	var uid = request.body.uid;
+	var studmajor = request.body.studmajor;
+	var istagged = request.body.istagged;
+
+	pool.connect((err,db,done) =>{
+		if(err){
+			console.log(err);
+		}
+		else{
+			var Query = "SELECT DISTINCT b.ugrp, b.grant as g FROM (SELECT b.groname::varchar as ugrp, "+
+									" true as grant FROM pg_user a , pg_group b WHERE a.usesysid = ANY (b.grolist) AND a.usename=$1 AND groname IN ('registrar','suser','guidance')) as b  "+
+									" UNION SELECT DISTINCT b.ugrp, b.grant as g FROM studsubj_controller sc  "+
+									" , (SELECT a.usename, b.groname::varchar as ugrp, true as grant FROM pg_user a , pg_group b WHERE a.usesysid = ANY (b.grolist) AND a.usename=$1 AND groname IN ('adviser','dean')) as b  "+
+									" , (SELECT * FROM program WHERE progcode=$2) as c  "+
+									" WHERE sc.username=b.usename and (CASE WHEN false=$3 THEN (CASE WHEN c.college!='GS' THEN c.progdept=sc.deptcode and c.college=sc.colcode	ELSE c.college=sc.colcode END) ELSE true END)";
+
+			db.query(Query,[uid,studmajor,istagged],(err,table) =>{
+				if(err){
+					console.log(err);
+				}
+				else{
+					if(table.rows.length > 0){
+						if(table.rows[0].g){
+							let enable_prog_grp = true;
+						}
+					}
+
+						var Query = "SELECT DISTINCT b.ugrp, b.grant as g FROM (SELECT b.groname::varchar as ugrp, "+
+												" true as grant FROM pg_user a , pg_group b WHERE a.usesysid = ANY (b.grolist) AND a.usename=$1 AND groname IN ('registrar','suser')) as b  "+
+												" UNION SELECT DISTINCT b.ugrp, b.grant as g FROM studsubj_controller sc  "+
+												" , (SELECT a.usename, b.groname::varchar as ugrp, true as grant FROM pg_user a , pg_group b WHERE a.usesysid = ANY (b.grolist) AND a.usename=$1 AND groname IN ('stud_course_enc','dean')) as b  "+
+												" , (SELECT * FROM program WHERE progcode=$2) as c  "+
+												" WHERE sc.username=b.usename and (CASE WHEN false=$3 THEN (CASE WHEN c.college!='GS' THEN c.progdept=sc.deptcode and c.college=sc.colcode	ELSE c.college=sc.colcode END) ELSE true END) ";
+
+						db.query(Query,[uid,studmajor,istagged],(err,table) =>{
+							if(err){
+								console.log(err);
+							}
+							else{
+								if(table.rows.length > 0){
+									if(table.rows[0].g){
+										let enable_prog_grp = true;
+									}
+								}
+							}
+						})
+				}
+			})
+		}
+	})
+});
+//** End of checking grant to user logged in during student reg **//
+
+
 
 //**If student is not ELEM or HS **//
 router.post('/evalIfNotELEMHS',function(request,response){
@@ -2154,6 +2423,7 @@ router.post('/enrollCourse', function(request, response) {
 	var progcode = request.body.progcode;
 	var courseno = request.body.courseno;
 	var maxload = request.body.maxload;
+	var is_dean = request.body.is_dean;
 
 	var is_allowed=0,load=0;
 	var message = "";
@@ -2187,7 +2457,7 @@ router.post('/enrollCourse', function(request, response) {
 						if(table.rows[0].load === null){
 							load = 0;
 						}else{
-							load = table.rows[0].load;
+							load = parseInt(table.rows[0].load);
 						}
 
 						console.log(load);
@@ -2212,7 +2482,11 @@ router.post('/enrollCourse', function(request, response) {
 										}
 										else {
 											console.log(table.rows);
-												load = parseInt(load) + parseInt(table.rows[0].unit);
+											if(table.rows.length === 0){
+												load = parseInt(load);
+											}else{
+													load = parseInt(load) + parseInt(table.rows[0].unit);
+											}
 
 												var Query3 = " SELECT is_stud_conflict($1,$2,$3,$4,$5) as can_add ";
 												db.query(Query3,[studid,subjcode,section,sy,sem],(err,table) =>{
@@ -2222,16 +2496,18 @@ router.post('/enrollCourse', function(request, response) {
 													else {
 															var can_add = table.rows[0].can_add;
 															console.log(can_add);
-															if(can_add === false){
-																	message = "WARNING! " + courseno + " is conflict with other schedule.";
+															if(can_add === 'false'  && (is_dean=== 'False')){
+																	message = "Only the Dean's account can add conflict schedule.";
 																	//result.push(message);
 																	db.end();
-																	response.send({message,add: "FALSE"});
+																	response.send({message,add: "FALSE",loadexceed:"false",load: load});
 															}
-															// else if(can_add === 'false'  && (is_dean=== 'false')){
-															// 	message = "Only the Dean's account can add conflict schedule.";
-															// }
-															else if( load <= maxload && can_add === true){
+															else if(can_add === 'false'  ){
+																	message = "WARNING! " + courseno + " is conflict with other schedule.";
+																	db.end();
+																	response.send({message,add: "FALSE",loadexceed:"false",load: load});
+															}
+															else if( load <= parseInt(maxload) && can_add === true){
 																	var Query4 = " INSERT INTO registration (studid,sy,sem,subjcode,section) "+
 	            																" VALUES($1,$4,$5,$2,$3) ";
 																	db.query(Query4,[studid,subjcode,section,sy,sem],(err,table) =>{
@@ -2242,10 +2518,10 @@ router.post('/enrollCourse', function(request, response) {
 																			message = "Added";
 																			//result.push(message);
 																			db.end();
-																			response.send({message,add: "TRUE"});
+																			response.send({message,add: "TRUE",loadexceed:"false",load: load});
 																		}
 																	})
-															}else if( load <= maxload && can_add == false){
+															}else if( load <= parseInt(maxload) && can_add == false){
 																	var Query4 = " INSERT INTO registration (studid,sy,sem,subjcode,section) "+
 	            																" VALUES($1,$4,$5,$2,$3) ";
 																	db.query(Query4,[studid,subjcode,section,sy,sem],(err,table) =>{
@@ -2256,19 +2532,19 @@ router.post('/enrollCourse', function(request, response) {
 																			message = "Added";
 																			//result.push(message);
 																			db.end();
-																			response.send({message,add: "TRUE"});
+																			response.send({message,add: "TRUE",loadexceed:"false",load: load});
 																		}
 																	})
-															}else if(load > maxload){
+															}else if(load > parseInt(maxload)){
 																message = "ERROR: Maximum study load exceeded.";
 																//result.push({message,add: "FALSE"});
 																db.end();
-																response.send({message,add: "FALSE"});
+																response.send({message,add: "FALSE",loadexceed:"true",load: load});
 															}else{
 																message ="ERROR: Unable to add course offering.";
 																//result.push({message,add: "FALSE"});
 																db.end();
-																response.send({message,add: "FALSE"});
+																response.send({message,add: "FALSE",loadexceed:"false",load: load});
 															}
 													}
 												})
@@ -2281,7 +2557,7 @@ router.post('/enrollCourse', function(request, response) {
 		}
 	})
 });
-//** END of getting sections of selected course ** //
+//** END of enrolling student course ** //
 
 //**** Getting enrolled courses ***//
 router.post('/getEnrolledCourses', function(request, response) {
@@ -2433,6 +2709,7 @@ router.post('/verificationCodeSubmission', function(request, response) {
 	var sem = request.body.sem;
 	var vercode = request.body.vercode;
 	var maxload = request.body.maxload;
+	var is_dean = request.body.is_dean;
 
 	pool.connect((err,db,done)=>{
 		if(err){
