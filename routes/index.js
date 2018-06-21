@@ -1859,56 +1859,143 @@ router.post('/whenNotFoundinStudenttag',function(request,response){
 								console.log(err);
 							}
 							else{
-								result.push({priorsemdata: table.rows});
-								//*** Get Scholastic standing
-								var Query3 = "SELECT scholastic_status($1,$3,$2) AS standing";
+								if(table.rows.length > 0){
+									result.push({priorsemdata: table.rows});
+									//*** Get Scholastic standing
+									var Query3 = "SELECT scholastic_status($1,$3,$2) AS standing";
 
-								db.query(Query3,[studid,sem,sy],(err,table) =>{
+									db.query(Query3,[studid,sem,sy],(err,table) =>{
+										if(err){
+											console.log(err);
+										}
+										else{
+
+												if(table.rows.length > 0){
+													result.push({schocstat:table.rows});
+												}
+
+												var Query4 = "SELECT gpa($1,$3,$2) AS gpa";
+
+												db.query(Query4,[studid,sem,sy],(err,table) =>{
+													if(err){
+														console.log(err);
+													}
+													else{
+															if(table.rows.length > 0){
+																result.push({gpa: table.rows});
+															}else{
+																result.push({gpa: 0});
+															}
+															var Query = "SELECT DISTINCT b.ugrp, b.grant as g FROM (SELECT b.groname::varchar as ugrp, "+
+																					" true as grant FROM pg_user a , pg_group b WHERE a.usesysid = ANY (b.grolist) AND a.usename=$1 AND groname IN ('registrar','suser','guidance')) as b  "+
+																					" UNION SELECT DISTINCT b.ugrp, b.grant as g FROM studsubj_controller sc  "+
+																					" , (SELECT a.usename, b.groname::varchar as ugrp, true as grant FROM pg_user a , pg_group b WHERE a.usesysid = ANY (b.grolist) AND a.usename=$1 AND groname IN ('adviser','dean')) as b  "+
+																					" , (SELECT * FROM program WHERE progcode=$2) as c  "+
+																					" WHERE sc.username=b.usename and (CASE WHEN false=$3 THEN (CASE WHEN c.college!='GS' THEN c.progdept=sc.deptcode and c.college=sc.colcode	ELSE c.college=sc.colcode END) ELSE true END)";
+
+															db.query(Query,[uid,studmajor,istagged],(err,table) =>{
+																if(err){
+																	console.log(err);
+																}
+																else{
+																	if(table.rows.length > 0){
+																		if(table.rows[0].g){
+																			let enable_prog_grp = true;
+																			result.push({message:"Allowed to advise for student registration", enable_prog_grp: true});
+																		}else{
+																			result.push({message:"Allowed advise for student registration", enable_prog_grp:false});
+																		}
+																	}
+
+																		var Query = "SELECT DISTINCT b.ugrp, b.grant as g FROM (SELECT b.groname::varchar as ugrp, "+
+																								" true as grant FROM pg_user a , pg_group b WHERE a.usesysid = ANY (b.grolist) AND a.usename=$1 AND groname IN ('registrar','suser')) as b  "+
+																								" UNION SELECT DISTINCT b.ugrp, b.grant as g FROM studsubj_controller sc  "+
+																								" , (SELECT a.usename, b.groname::varchar as ugrp, true as grant FROM pg_user a , pg_group b WHERE a.usesysid = ANY (b.grolist) AND a.usename=$1 AND groname IN ('stud_course_enc','dean')) as b  "+
+																								" , (SELECT * FROM program WHERE progcode=$2) as c  "+
+																								" WHERE sc.username=b.usename and (CASE WHEN false=$3 THEN (CASE WHEN c.college!='GS' THEN c.progdept=sc.deptcode and c.college=sc.colcode	ELSE c.college=sc.colcode END) ELSE true END) ";
+
+																		db.query(Query,[uid,studmajor,istagged],(err,table) =>{
+																			if(err){
+																				console.log(err);
+																			}
+																			else{
+																				if(table.rows.length > 0){
+																					if(table.rows[0].g){
+																						let enable_prog_grp = true;
+																						result.push({message:"An advise for student registration", enable_prog_grp: true});
+																					}else{
+																						result.push({message:"An advise for student registration", enable_prog_grp: false});
+																					}
+																				}
+																			}
+																		})
+																}
+															})
+													}
+												})
+										}
+									})
+								}
+							}
+						})
+						var query = "SELECT DISTINCT b.ugrp, b.grant as g FROM (SELECT b.groname::varchar as ugrp, "+
+												"	true as grant FROM pg_user a , pg_group b WHERE a.usesysid = ANY (b.grolist) AND a.usename=$1 AND groname IN ('registrar','suser','guidance')) as b  "+
+												"		UNION SELECT DISTINCT b.ugrp, b.grant as g FROM studsubj_controller sc  "+
+												"		,(SELECT b.groname::varchar as ugrp, true as grant FROM pg_user a , pg_group b WHERE a.usesysid = ANY (b.grolist) AND a.usename=$1 AND groname IN ('adviser','dean')) as b  "+
+												"		WHERE sc.username=$1";
+
+						db.query(query,[uid],(err,table) =>{
+							if(err){
+								console.log(err);
+							}
+							else{
+								result.push({usergrant: table.rows});
+								db.end();
+								response.send(result);
+							}
+						})
+					}else{
+						var Query = "SELECT DISTINCT b.ugrp, b.grant as g FROM (SELECT b.groname::varchar as ugrp,  "+
+												" true as grant FROM pg_user a , pg_group b WHERE a.usesysid = ANY (b.grolist) AND a.usename=$1 AND groname IN ('registrar','suser','guidance')) as b  "+
+												" UNION SELECT DISTINCT b.ugrp, b.grant as g FROM studsubj_controller sc  "+
+												" ,(SELECT b.groname::varchar as ugrp, true as grant FROM pg_user a , pg_group b WHERE a.usesysid = ANY (b.grolist) AND a.usename=$1 AND groname IN ('adviser','dean')) as b  "+
+												" WHERE sc.username=$1 and $2";
+						db.query(Query,[uid,istagged],(err,table) =>{
+							if(err){
+								console.log(err);
+							}
+							else{
+								if(table.rows.length > 0){
+									if(table.rows[0].g){
+										result.push({enable_prog_grp: true});
+									}else{
+										result.push({enable_prog_grp: false});
+									}
+								}
+								var Query = "SELECT DISTINCT b.ugrp, b.grant as g FROM (SELECT b.groname::varchar as ugrp, "+
+													  " true as grant FROM pg_user a , pg_group b WHERE a.usesysid = ANY (b.grolist) AND a.usename=$1 AND groname IN ('registrar','suser')) as b "+
+													  " UNION SELECT DISTINCT b.ugrp, b.grant as g FROM studsubj_controller sc "+
+													  " ,(SELECT b.groname::varchar as ugrp, true as grant FROM pg_user a , pg_group b WHERE a.usesysid = ANY (b.grolist) AND a.usename=$1 AND groname IN ('stud_course_enc','dean')) as b "+
+													  " WHERE sc.username=$1 and $2";
+								db.query(Query,[uid,istagged],(err,table) =>{
 									if(err){
 										console.log(err);
 									}
 									else{
-
 										if(table.rows.length > 0){
-											result.push({schocstat:table.rows});
+											if(table.rows[0].g){
+												result.push({enable_course_grp: true});
+											}else{
+												result.push({enable_course_grp: false});
+											}
 										}
-
-										var Query4 = "SELECT gpa($1,$3,$2) AS gpa";
-
-										db.query(Query4,[studid,sem,sy],(err,table) =>{
-											if(err){
-												console.log(err);
-											}
-											else{
-												if(table.rows.length > 0){
-													result.push({gpa: table.rows});
-												}else{
-													result.push({gpa: 0});
-												}
-											}
-										})
+										db.end();
+										response.send(result);
 									}
 								})
 							}
 						})
 					}
-
-					var query = "SELECT DISTINCT b.ugrp, b.grant as g FROM (SELECT b.groname::varchar as ugrp, "+
-											"	true as grant FROM pg_user a , pg_group b WHERE a.usesysid = ANY (b.grolist) AND a.usename=$1 AND groname IN ('registrar','suser','guidance')) as b  "+
-											"		UNION SELECT DISTINCT b.ugrp, b.grant as g FROM studsubj_controller sc  "+
-											"		,(SELECT b.groname::varchar as ugrp, true as grant FROM pg_user a , pg_group b WHERE a.usesysid = ANY (b.grolist) AND a.usename=$1 AND groname IN ('adviser','dean')) as b  "+
-											"		WHERE sc.username=$1";
-
-					db.query(query,[uid],(err,table) =>{
-						if(err){
-							console.log(err);
-						}
-						else{
-							result.push({usergrant: table.rows});
-							db.end();
-							response.send();
-						}
-					})
 				}
 			})
 		}
@@ -1916,11 +2003,70 @@ router.post('/whenNotFoundinStudenttag',function(request,response){
 });
 //** End of getting student data from prior sem **//
 
-//*** Check grant to user logged in during student registration **//
-router.post('/checkGrantStudentReg',function(request,response){
+//*** Check grant to user logged if registrar **//
+router.post('/checkGrantRegistrar',function(request,response){
+	var uid = request.body.uid;
+
+	pool.connect((err,db,done) =>{
+		if(err){
+			console.log(err);
+		}
+		else{
+			var Query = "SELECT b.groname, b.grosysid , a.usename FROM pg_user a , pg_group b "+
+      						" WHERE a.usesysid = ANY (b.grolist) AND a.usename=$1  AND b.groname='registrar' ";
+			db.query(Query,[uid],(err,table) =>{
+				if(err){
+					console.log(err);
+				}
+				else{
+						if(table.rows.length > 0){
+							db.end();
+							response.send({registrar: true});
+						}else{
+							db.end();
+							response.send({registrar: false});
+						}
+				}
+			})
+		}
+	})
+});
+//** End of checking grant to user logged in if registrar **//
+
+//*** Check grant to user logged if registrar or super user**//
+router.post('/checkGrantFRegistrarSuperuser',function(request,response){
+	var uid = request.body.uid;
+
+	pool.connect((err,db,done) =>{
+		if(err){
+			console.log(err);
+		}
+		else{
+			var Query = "SELECT b.groname::varchar as ugrp FROM pg_user a , pg_group b WHERE a.usesysid = ANY (b.grolist) AND a.usename=$1 AND groname IN ('registrar','suser') ";
+			db.query(Query,[uid],(err,table) =>{
+				if(err){
+					console.log(err);
+				}
+				else{
+						if(table.rows.length > 0){
+							db.end();
+							response.send({registrarsuser: true});
+						}else{
+							db.end();
+							response.send({registrarsuser: false});
+						}
+				}
+			})
+		}
+	})
+});
+//** End of checking grant to user logged in if registrar or super user**//
+
+//*** Check grant to user logged in **//
+router.post('/checkGrantReg',function(request,response){
 	var uid = request.body.uid;
 	var studmajor = request.body.studmajor;
-	var istagged = request.body.istagged;
+	var result =[];
 
 	pool.connect((err,db,done) =>{
 		if(err){
@@ -1928,40 +2074,41 @@ router.post('/checkGrantStudentReg',function(request,response){
 		}
 		else{
 			var Query = "SELECT DISTINCT b.ugrp, b.grant as g FROM (SELECT b.groname::varchar as ugrp, "+
-									" true as grant FROM pg_user a , pg_group b WHERE a.usesysid = ANY (b.grolist) AND a.usename=$1 AND groname IN ('registrar','suser','guidance')) as b  "+
-									" UNION SELECT DISTINCT b.ugrp, b.grant as g FROM studsubj_controller sc  "+
-									" , (SELECT a.usename, b.groname::varchar as ugrp, true as grant FROM pg_user a , pg_group b WHERE a.usesysid = ANY (b.grolist) AND a.usename=$1 AND groname IN ('adviser','dean')) as b  "+
-									" , (SELECT * FROM program WHERE progcode=$2) as c  "+
-									" WHERE sc.username=b.usename and (CASE WHEN false=$3 THEN (CASE WHEN c.college!='GS' THEN c.progdept=sc.deptcode and c.college=sc.colcode	ELSE c.college=sc.colcode END) ELSE true END)";
-
-			db.query(Query,[uid,studmajor,istagged],(err,table) =>{
+									 " true as grant FROM pg_user a , pg_group b WHERE a.usesysid = ANY (b.grolist) AND a.usename=$1 AND groname IN ('registrar','suser','guidance')) as b  "+
+									 " UNION SELECT DISTINCT b.ugrp, b.grant as g FROM studsubj_controller sc  "+
+									 " ,(SELECT a.usename, b.groname::varchar as ugrp, true as grant FROM pg_user a , pg_group b WHERE a.usesysid = ANY (b.grolist) AND a.usename='mmortuyo' AND groname IN ('adviser','dean')) as b  "+
+									 " , (SELECT * FROM program WHERE progcode=$2) as c  "+
+									 " WHERE sc.username=b.usename and (CASE WHEN c.college!='GS' THEN c.progdept=sc.deptcode and c.college=sc.colcode ELSE c.college=sc.colcode END) ";
+			db.query(Query,[uid,studmajor],(err,table) =>{
 				if(err){
 					console.log(err);
 				}
 				else{
-					if(table.rows.length > 0){
-						if(table.rows[0].g){
-							let enable_prog_grp = true;
+						if(table.rows.length > 0){
+							result.push({message:"Can edit studinfo",enable_prog_grp: true});
+						}else{
+							result.push({message:"Cannot edit studinfo",enable_prog_grp: false});
 						}
-					}
-
 						var Query = "SELECT DISTINCT b.ugrp, b.grant as g FROM (SELECT b.groname::varchar as ugrp, "+
-												" true as grant FROM pg_user a , pg_group b WHERE a.usesysid = ANY (b.grolist) AND a.usename=$1 AND groname IN ('registrar','suser')) as b  "+
+												" true as grant FROM pg_user a , pg_group b WHERE a.usesysid = ANY (b.grolist) AND a.usename='mmortuyo' AND groname IN ('registrar','suser')) as b  "+
 												" UNION SELECT DISTINCT b.ugrp, b.grant as g FROM studsubj_controller sc  "+
-												" , (SELECT a.usename, b.groname::varchar as ugrp, true as grant FROM pg_user a , pg_group b WHERE a.usesysid = ANY (b.grolist) AND a.usename=$1 AND groname IN ('stud_course_enc','dean')) as b  "+
-												" , (SELECT * FROM program WHERE progcode=$2) as c  "+
-												" WHERE sc.username=b.usename and (CASE WHEN false=$3 THEN (CASE WHEN c.college!='GS' THEN c.progdept=sc.deptcode and c.college=sc.colcode	ELSE c.college=sc.colcode END) ELSE true END) ";
-
-						db.query(Query,[uid,studmajor,istagged],(err,table) =>{
+												" ,(SELECT a.usename, b.groname::varchar as ugrp, true as grant FROM pg_user a , pg_group b WHERE a.usesysid = ANY (b.grolist) AND a.usename='mmortuyo' AND groname IN ('stud_course_enc','dean')) as b  "+
+												" , (SELECT * FROM program WHERE progcode='BSGE') as c "+
+												" WHERE sc.username=b.usename and (CASE WHEN c.college!='GS' THEN c.progdept=sc.deptcode and c.college=sc.colcode ELSE c.college=sc.colcode END) ";
+						db.query(Query,[uid,studmajor],(err,table) =>{
 							if(err){
 								console.log(err);
 							}
 							else{
-								if(table.rows.length > 0){
-									if(table.rows[0].g){
-										let enable_prog_grp = true;
+									if(table.rows.length > 0){
+										result.push({message2:"Can add student courses",enable_course_grp: true});
+										db.end();
+										response.send(result);
+									}else{
+										result.push({message2:"Cannot add student courses",enable_course_grp: false});
+										db.end();
+										response.send(result);
 									}
-								}
 							}
 						})
 				}
@@ -1969,8 +2116,7 @@ router.post('/checkGrantStudentReg',function(request,response){
 		}
 	})
 });
-//** End of checking grant to user logged in during student reg **//
-
+//** End of checking grant to user logged in **//
 
 
 //**If student is not ELEM or HS **//
