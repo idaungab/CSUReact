@@ -1076,6 +1076,33 @@ router.post('/getCategoryProgram',function(request,response){
 	});
 	//**** End Get Schedule Detail **** //
 
+	//**** Start Get  NSTP Detail **** //
+	router.post('/getNSTPDetail', function(req, res) {
+		var subjcode = req.body.subjcode;
+		var section = req.body.section;
+		var sy = req.body.sy;
+		var sem = req.body.sem;
+
+	  pool.connect((err,db,done)=>{
+	    if(err){
+	      console.log(err);
+	    }
+	    else {
+				var Query = "select * from nstpdetail where sy=$1 and sem=$2 and subjcode = $3 and section=$4";
+	      db.query(Query,[sy,sem,subjcode,section],(err,table) =>{
+	        if(err){
+	          console.log(err);
+	        }
+	        else {
+	          db.end();
+	          res.send(table.rows);
+	        }
+	      })
+	    }
+	  })
+	});
+	//**** End Get NSTP Detail **** //
+
 	//**** Start Get Predefined Schedule **** //
 	router.get('/getPreSched', function(req, res) {
 	  pool.connect((err,db,done)=>{
@@ -1287,7 +1314,7 @@ router.post('/getCategoryProgram',function(request,response){
 	})
 	// **** End of Checking if user has access to subject entry ****//
 
-	// **** Start of Checking if user has access to subject entry ****//
+	// **** Start of Saving Schedule ****//
 	router.post('/saveSchedule',function(request,response){
 
 		var conflict = request.body.conflict;
@@ -1328,7 +1355,52 @@ router.post('/getCategoryProgram',function(request,response){
 			}
 		})
 	})
-	// **** End of Checking if user has access to subject entry ****//
+	// **** End of Saving Schedule ****//
+
+	// **** Start of Updating Schedule ****//
+	router.post('/updateSchedule',function(request,response){
+
+		var conflict = request.body.conflict;
+		var prevsection = request.body.prevsection;
+		var prevsectioning = request.body.prevsectioning;
+		var stype = request.body.stype;
+		var subjcode = request.body.subjcode;
+		var days = request.body.days;
+		var fromtime = request.body.fromtime;
+		var totime = request.body.totime;
+		var instructor = request.body.instructor;
+		var room = request.body.room;
+		var building = request.body.building;
+		var sy = request.body.sy;
+		var sem = request.body.sem;
+		var slot = request.body.slot;
+		var is_requested = request.body.is_requested;
+		var is_restricted = request.body.is_restricted;
+		var yearlevel = request.body.yearlevel;
+		var progcode = request.body.progcode;
+		var block = request.body.block;
+		var sdate = request.body.sdate;
+		var iscwts = request.body.iscwts;
+		pool.connect((err,db,done)=>{
+			if(err){
+				console.log(err)
+			}
+			else{
+				var Query = "SELECT update_section($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)";
+				db.query(Query,[conflict,prevsection,prevsectioning,subjcode,stype,days,fromtime,totime,instructor,room,building,sy,sem,slot,is_requested,is_restricted,yearlevel,progcode,block,sdate,iscwts],(err,table) =>{
+					if(err){
+						console.log(err.message)
+						response.send({message:err.message})
+					}
+					else{
+						db.end();
+						response.send({message:"ok"})
+					}
+				})
+			}
+		})
+	})
+	// **** End of Updating Schedule ****//
 
 	// **** Start of getting class list ****//
 	router.post('/getClassList',function(request,response){
@@ -1830,8 +1902,10 @@ router.post('/whenNotFoundinStudenttag',function(request,response){
 	var sem = request.body.sem;
 	var sy = request.body.sy;
 	var uid = request.body.uid;
-	var result =[];
+	var istagged = request.body.istagged;
 
+	var result =[];
+console.log(studid,sem,sy,uid,istagged);
 	pool.connect((err,db,done) =>{
 		if(err){
 			console.log(err);
@@ -1846,6 +1920,7 @@ router.post('/whenNotFoundinStudenttag',function(request,response){
 				}
 				else{
 					//*** Check the latest prior sems without DRP ALL grades **//
+					console.log("kini lage");
 					if(table.rows.length > 0){
 						var Query2 = " SELECT s.sy, s.sem, s.studid, s.studmajor, s.cur_year, count(r.subjcode) as subjcnt "+
 						         " FROM semstudent s, (SELECT * FROM sysem WHERE sy||sem<$3||$2) AS y, registration r, subject j "+
@@ -1862,14 +1937,13 @@ router.post('/whenNotFoundinStudenttag',function(request,response){
 								if(table.rows.length > 0){
 									result.push({priorsemdata: table.rows});
 									//*** Get Scholastic standing
-									var Query3 = "SELECT scholastic_status($1,$3,$2) AS standing";
+									var Query3 = "SELECT scholastic_status($1,$2,$3) AS standing";
 
 									db.query(Query3,[studid,sem,sy],(err,table) =>{
 										if(err){
 											console.log(err);
-										}
-										else{
-
+										}else{
+												console.log("scholastic status");
 												if(table.rows.length > 0){
 													result.push({schocstat:table.rows});
 												}
@@ -2092,8 +2166,8 @@ router.post('/checkGrantReg',function(request,response){
 						var Query = "SELECT DISTINCT b.ugrp, b.grant as g FROM (SELECT b.groname::varchar as ugrp, "+
 												" true as grant FROM pg_user a , pg_group b WHERE a.usesysid = ANY (b.grolist) AND a.usename='mmortuyo' AND groname IN ('registrar','suser')) as b  "+
 												" UNION SELECT DISTINCT b.ugrp, b.grant as g FROM studsubj_controller sc  "+
-												" ,(SELECT a.usename, b.groname::varchar as ugrp, true as grant FROM pg_user a , pg_group b WHERE a.usesysid = ANY (b.grolist) AND a.usename='mmortuyo' AND groname IN ('stud_course_enc','dean')) as b  "+
-												" , (SELECT * FROM program WHERE progcode='BSGE') as c "+
+												" ,(SELECT a.usename, b.groname::varchar as ugrp, true as grant FROM pg_user a , pg_group b WHERE a.usesysid = ANY (b.grolist) AND a.usename=$1 AND groname IN ('stud_course_enc','dean')) as b  "+
+												" , (SELECT * FROM program WHERE progcode=$2) as c "+
 												" WHERE sc.username=b.usename and (CASE WHEN c.college!='GS' THEN c.progdept=sc.deptcode and c.college=sc.colcode ELSE c.college=sc.colcode END) ";
 						db.query(Query,[uid,studmajor],(err,table) =>{
 							if(err){
@@ -2290,6 +2364,7 @@ router.post('/checkOfferedtoStudent', function(request, response) {
 	var block = request.body.block;
 	var progcode = request.body.progcode;
 	var year = request.body.year;
+
 console.log(block);
 	pool.connect((err,db,done)=>{
 		if(err){
@@ -2397,12 +2472,12 @@ router.post('/InsertUpdateEnrollStudent', function(request, response) {
 	var sem = request.body.sem;
 	var studmajor = request.body.major;
 	var regdate = request.body.regdate;
-	var gpa = request.body.gpa;
+	var gpa = parseFloat(request.body.gpa);
 	var scholarcode = request.body.scholarcode;
 	var studlevel = request.body.year;
 	var cur_year = request.body.cur_year;
 	var status = request.body.status;
-	var maxload = request.body.maxload;
+	var maxload = parseFloat(request.body.maxload);
 	var block = request.body.block;
 	var scholastic_stat = request.body.scholastic_stat;
 	var savemode = request.body.savemode;
