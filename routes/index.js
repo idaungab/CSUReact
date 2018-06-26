@@ -1357,6 +1357,52 @@ router.post('/getCategoryProgram',function(request,response){
 	})
 	// **** End of Saving Schedule ****//
 
+	// **** Start of Getting Empty Schedule ****//
+	router.post('/getEmptySchedule',function(request,response){
+
+		var sy = request.body.sy;
+		var sem = request.body.sem;
+		var username = 'janavarro';
+		pool.connect((err,db,done)=>{
+			if(err){
+				console.log(err)
+			}
+			else{
+				var Query = "SELECT DISTINCT A.COLLEGE, A.COURSENO, A.DESCRIPTION, B.* "+
+											" FROM SUBJECT A, "+
+											 " (SELECT A.SUBJCODE, A.SECTION, A.ENROLLEES, B.COUNTED, A.SY, A.SEM "+
+											  " FROM OFFEREDSUBJECT A LEFT OUTER JOIN ( "+
+											    " SELECT A.SUBJCODE, A.SECTION, A.ENROLLEES AS RECORDED, COUNT(B.STUDID) AS COUNTED, A.SY, A.SEM "+
+											    " FROM OFFEREDSUBJECT A, REGISTRATION B "+
+											    " WHERE A.SUBJCODE=B.SUBJCODE AND A.SECTION=B.SECTION AND A.SY=B.SY AND A.SEM=B.SEM AND A.SY=$1 AND A.SEM=$2 "+
+											    " GROUP BY A.SUBJCODE, A.SECTION, A.SY, A.SEM, A.ENROLLEES "+
+											    " ORDER BY A.SUBJCODE, A.SECTION, A.SY, A.SEM) AS B USING (SUBJCODE, SECTION, SY, SEM) "+
+											  " WHERE ((B.COUNTED IS NULL AND NOT subjcode in ('CONSULTATION','FLEXI')) OR "+
+											         " (A.SUBJCODE||A.SECTION IN (SELECT DISTINCT subjcode||section FROM schedule s WHERE subjcode in ('CONSULTATION','FLEXI') "+
+											           " AND SY=$1 AND SEM=$2 AND empid='001-179'))) "+
+											    " AND A.SY=$1 AND A.SEM=$2) AS B "+
+											  " , (SELECT DISTINCT units.colcode "+
+											  " FROM (SELECT * FROM col_encoder WHERE username=$3) as grpunit "+
+											    " , (SELECT DISTINCT colcode FROM college) as units "+
+											    " , (SELECT b.groname::varchar as groname, b.grosysid , a.usename FROM pg_user a , pg_group b WHERE a.usesysid = ANY (b.grolist) AND a.usename=$3) as grp "+
+											  " WHERE (CASE WHEN grp.groname IN ('suser','registrar') THEN TRUE WHEN units.colcode=grpunit.colcode AND grp.groname IN ('coordinator','dept_chair','dean') THEN TRUE ELSE FALSE END) "+
+											  " ) AS C "+
+											" WHERE A.SUBJCODE=B.SUBJCODE AND A.COLLEGE = C.COLCODE "+
+											" ORDER BY A.COLLEGE, B.SUBJCODE, B.SECTION ";
+				db.query(Query,[sy,sem,username],(err,table) =>{
+					if(err){
+						console.log(err.message)
+					}
+					else{
+						db.end();
+						response.send(table.rows)
+					}
+				})
+			}
+		})
+	})
+	// **** End of Getting Empty Schedule ****//
+
 	// **** Start of Updating Schedule ****//
 	router.post('/updateSchedule',function(request,response){
 
@@ -1401,6 +1447,113 @@ router.post('/getCategoryProgram',function(request,response){
 		})
 	})
 	// **** End of Updating Schedule ****//
+
+	// **** Start of Deleting Schedule ****//
+	router.post('/deleteFromOfferedFor',function(request,response){
+
+		var subjcode = request.body.subjcode;
+		var section = request.body.section;
+		var sy = request.body.sy;
+		var sem = request.body.sem;
+
+		pool.connect((err,db,done)=>{
+			if(err){
+				console.log(err)
+			}
+			else{
+				var Query = "DELETE FROM OFFEREDFOR WHERE SUBJCODE=$1 AND SECTION=$2 AND SY=$3 AND SEM=$4";
+				db.query(Query,[subjcode,section,sy,sem],(err,table) =>{
+					if(err){
+						console.log(err.message)
+						response.send({message:'error'})
+					}
+					else{
+						db.end();
+						response.send({message:"success"})
+					}
+				})
+			}
+		})
+	})
+	router.post('/deleteFromSchedule',function(request,response){
+
+		var subjcode = request.body.subjcode;
+		var section = request.body.section;
+		var sy = request.body.sy;
+		var sem = request.body.sem;
+
+		pool.connect((err,db,done)=>{
+			if(err){
+				console.log(err)
+			}
+			else{
+				var Query = "DELETE FROM SCHEDULE WHERE SUBJCODE=$1 AND SECTION=$2 AND SY=$3 AND SEM=$4";
+				db.query(Query,[subjcode,section,sy,sem],(err,table) =>{
+					if(err){
+						console.log(err.message)
+						response.send({message:'error'})
+					}
+					else{
+						db.end();
+						response.send({message:"success"})
+					}
+				})
+			}
+		})
+	})
+	router.post('/deleteFromNSTPDetail',function(request,response){
+
+		var subjcode = request.body.subjcode;
+		var section = request.body.section;
+		var sy = request.body.sy;
+		var sem = request.body.sem;
+
+		pool.connect((err,db,done)=>{
+			if(err){
+				console.log(err)
+			}
+			else{
+				var Query = "DELETE FROM NSTPDETAIL WHERE SUBJCODE=$1 AND SECTION=$2 AND SY=$3 AND SEM=$4";
+				db.query(Query,[subjcode,section,sy,sem],(err,table) =>{
+					if(err){
+						console.log(err.message)
+						response.send({message:'error'})
+					}
+					else{
+						db.end();
+						response.send({message:"success"})
+					}
+				})
+			}
+		})
+	})
+	router.post('/deleteFromOfferedSubject',function(request,response){
+
+		var subjcode = request.body.subjcode;
+		var section = request.body.section;
+		var sy = request.body.sy;
+		var sem = request.body.sem;
+
+		pool.connect((err,db,done)=>{
+			if(err){
+				console.log(err)
+			}
+			else{
+				var Query = "DELETE FROM OFFEREDSUBJECT WHERE SUBJCODE=$1 AND SECTION=$2 AND SY=$3 AND SEM=$4";
+				db.query(Query,[subjcode,section,sy,sem],(err,table) =>{
+					if(err){
+						console.log(err.message)
+						response.send({message:'error'})
+					}
+					else{
+						db.end();
+						response.send({message:"success"})
+					}
+				})
+			}
+		})
+	})
+	// **** End of Deleting Schedule ****//
 
 	// **** Start of getting class list ****//
 	router.post('/getClassList',function(request,response){
@@ -1903,6 +2056,7 @@ router.post('/whenNotFoundinStudenttag',function(request,response){
 	var sy = request.body.sy;
 	var uid = request.body.uid;
 	var istagged = request.body.istagged;
+	var studmajor = request.body.studmajor;
 
 	var result =[];
 console.log(studid,sem,sy,uid,istagged);
@@ -1920,7 +2074,7 @@ console.log(studid,sem,sy,uid,istagged);
 				}
 				else{
 					//*** Check the latest prior sems without DRP ALL grades **//
-					console.log("kini lage");
+					// console.log("kini lage");
 					if(table.rows.length > 0){
 						var Query2 = " SELECT s.sy, s.sem, s.studid, s.studmajor, s.cur_year, count(r.subjcode) as subjcnt "+
 						         " FROM semstudent s, (SELECT * FROM sysem WHERE sy||sem<$3||$2) AS y, registration r, subject j "+
@@ -1943,7 +2097,7 @@ console.log(studid,sem,sy,uid,istagged);
 										if(err){
 											console.log(err);
 										}else{
-												console.log("scholastic status");
+												//console.log("scholastic status");
 												if(table.rows.length > 0){
 													result.push({schocstat:table.rows});
 												}
@@ -1966,7 +2120,6 @@ console.log(studid,sem,sy,uid,istagged);
 																					" , (SELECT a.usename, b.groname::varchar as ugrp, true as grant FROM pg_user a , pg_group b WHERE a.usesysid = ANY (b.grolist) AND a.usename=$1 AND groname IN ('adviser','dean')) as b  "+
 																					" , (SELECT * FROM program WHERE progcode=$2) as c  "+
 																					" WHERE sc.username=b.usename and (CASE WHEN false=$3 THEN (CASE WHEN c.college!='GS' THEN c.progdept=sc.deptcode and c.college=sc.colcode	ELSE c.college=sc.colcode END) ELSE true END)";
-
 															db.query(Query,[uid,studmajor,istagged],(err,table) =>{
 																if(err){
 																	console.log(err);
@@ -2001,6 +2154,23 @@ console.log(studid,sem,sy,uid,istagged);
 																						result.push({message:"An advise for student registration", enable_prog_grp: false});
 																					}
 																				}
+
+																				var query = "SELECT DISTINCT b.ugrp, b.grant as g FROM (SELECT b.groname::varchar as ugrp, "+
+																										"	true as grant FROM pg_user a , pg_group b WHERE a.usesysid = ANY (b.grolist) AND a.usename=$1 AND groname IN ('registrar','suser','guidance')) as b  "+
+																										"		UNION SELECT DISTINCT b.ugrp, b.grant as g FROM studsubj_controller sc  "+
+																										"		,(SELECT b.groname::varchar as ugrp, true as grant FROM pg_user a , pg_group b WHERE a.usesysid = ANY (b.grolist) AND a.usename=$1 AND groname IN ('adviser','dean')) as b  "+
+																										"		WHERE sc.username=$1";
+
+																				db.query(query,[uid],(err,table) =>{
+																					if(err){
+																						console.log(err);
+																					}
+																					else{
+																						result.push({usergrant: table.rows});
+																						db.end();
+																						response.send(result);
+																					}
+																				})
 																			}
 																		})
 																}
@@ -2010,22 +2180,6 @@ console.log(studid,sem,sy,uid,istagged);
 										}
 									})
 								}
-							}
-						})
-						var query = "SELECT DISTINCT b.ugrp, b.grant as g FROM (SELECT b.groname::varchar as ugrp, "+
-												"	true as grant FROM pg_user a , pg_group b WHERE a.usesysid = ANY (b.grolist) AND a.usename=$1 AND groname IN ('registrar','suser','guidance')) as b  "+
-												"		UNION SELECT DISTINCT b.ugrp, b.grant as g FROM studsubj_controller sc  "+
-												"		,(SELECT b.groname::varchar as ugrp, true as grant FROM pg_user a , pg_group b WHERE a.usesysid = ANY (b.grolist) AND a.usename=$1 AND groname IN ('adviser','dean')) as b  "+
-												"		WHERE sc.username=$1";
-
-						db.query(query,[uid],(err,table) =>{
-							if(err){
-								console.log(err);
-							}
-							else{
-								result.push({usergrant: table.rows});
-								db.end();
-								response.send(result);
 							}
 						})
 					}else{
@@ -2365,7 +2519,7 @@ router.post('/checkOfferedtoStudent', function(request, response) {
 	var progcode = request.body.progcode;
 	var year = request.body.year;
 
-console.log(block);
+// console.log(block);
 	pool.connect((err,db,done)=>{
 		if(err){
 			console.log(err);
@@ -2472,18 +2626,21 @@ router.post('/InsertUpdateEnrollStudent', function(request, response) {
 	var sem = request.body.sem;
 	var studmajor = request.body.major;
 	var regdate = request.body.regdate;
-	var gpa = parseFloat(request.body.gpa);
+	var gpa =request.body.gpa;
 	var scholarcode = request.body.scholarcode;
 	var studlevel = request.body.year;
 	var cur_year = request.body.cur_year;
 	var status = request.body.status;
-	var maxload = parseFloat(request.body.maxload);
+	var maxload = request.body.maxload;
 	var block = request.body.block;
 	var scholastic_stat = request.body.scholastic_stat;
 	var savemode = request.body.savemode;
 
-	let values = [studid,sy,sem,studmajor,regdate,gpa,scholarcode,studlevel,cur_year,status,maxload,block,scholastic_stat]
-
+	if(maxload === ""){
+		maxload = 0;
+	}
+	let values = [studid,sy,sem,studmajor,regdate,parseFloat(gpa),scholarcode,studlevel,cur_year,status,parseInt(maxload),block,scholastic_stat]
+console.log(maxload);
 	pool.connect((err,db,done)=>{
 		if(err){
 			console.log(err);
